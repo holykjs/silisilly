@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3 uid="uid://d0bqee5tbkmoh"]
+
+[ext_resource type="Script" uid="uid://ckspatf8a543" path="res://scripts/ai_player.gd" id="1_rkhgb"]
+[ext_resource type="Texture2D" uid="uid://coh44yi3tb7w8" path="res://assets/sprites/ai.png" id="2_6gcmd"]
+
+[node name="AiTagger" type="CharacterBody2D"]
+script = ExtResource("1_rkhgb")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(1044, 592.875)
+scale = Vector2(0.157025, 0.151942)
+texture = ExtResource("2_6gcmd")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+
+[node name="NavigationAgent2D" type="NavigationAgent2D" parent="."]

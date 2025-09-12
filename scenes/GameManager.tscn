@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://cy3x0o8a701uv"]
+
+[node name="GameManager" type="Node2D"]
+
+[node name="SpawnPoints" type="Node2D" parent="."]
+
+[node name="Spawn1" type="Marker2D" parent="SpawnPoints"]
+
+[node name="Spawn2" type="Marker2D" parent="SpawnPoints"]
+
+[node name="Spawn3" type="Marker2D" parent="SpawnPoints"]
+
+[node name="Spawn4" type="Marker2D" parent="SpawnPoints"]
+
+[node name="Spawn5" type="Marker2D" parent="SpawnPoints"]
+
+[node name="HUD" type="CanvasLayer" parent="."]

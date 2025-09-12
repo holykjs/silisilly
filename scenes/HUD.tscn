@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://ye8gt3t4sdbh"]
+
+[node name="Hud" type="CanvasLayer"]
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+offset_left = 9.0
+offset_top = 11.0
+offset_right = 184.0
+offset_bottom = 75.0
+
+[node name="Label" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Players Remaining: 5"
+
+[node name="Label2" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Frozen: 0"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="TaggerLabel" type="Label" parent="HBoxContainer"]
+layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="HBoxContainer"]
+layout_mode = 2
