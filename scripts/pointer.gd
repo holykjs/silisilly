@@ -10,3 +10,11 @@ func move_to_peer(peer_id:int):
 		if p.has_method("is_network_player") and p.peer_id == peer_id:
 			global_position = p.global_position + Vector2(0, -48)
 			return
+
+
+func _on_area_entered(area: Area2D) -> void:
+	pass # Replace with function body.
+
+
+func _on_area_exited(area: Area2D) -> void:
+	pass # Replace with function body.

@@ -27,6 +27,9 @@ func set_selected_map(map_name:String):
 		selected_map = map_name
 		print("Selected map:", selected_map)
 
+func get_selected_map() -> String:
+	return selected_map
+
 func start_game():
 	if multiplayer.is_server():
 		# broadcast to all: please load this map file
@@ -39,12 +42,12 @@ func rpc_load_map(map_name:String):
 	_load_map_local(map_name)
 
 func _load_map_local(map_name:String):
-	var path = "res://scenes/maps/%s" % map_name
+	var path = "res://maps/%s" % map_name
 	if not FileAccess.file_exists(path):
 		push_error("Map missing: " + path)
 		return
+	# Godot 4 scene loading
 	get_tree().change_scene_to_file(path)
 	# once scene loads, clients should request spawn (client side)
 	if not multiplayer.is_server():
-		# ask server to spawn a player for us
 		rpc_id(get_multiplayer_authority(), "rpc_request_spawn", multiplayer.get_unique_id())

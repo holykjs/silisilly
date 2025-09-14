@@ -1,30 +1,71 @@
-[gd_scene load_steps=5 format=3 uid="uid://crt1bqu3w2gl0"]
+[gd_scene load_steps=10 format=3 uid="uid://crt1bqu3w2gl0"]
 
 [ext_resource type="Script" uid="uid://bra1jxftgyulb" path="res://scripts/player.gd" id="1_p0vlq"]
-[ext_resource type="Texture2D" uid="uid://ciimb130u4bwu" path="res://assets/sprites/player.png" id="2_v6fml"]
+[ext_resource type="Texture2D" uid="uid://3bumxf5neg0p" path="res://assets/sprites/player.png" id="2_v6fml"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_v6fml"]
-size = Vector2(52.5, 57)
+[sub_resource type="AtlasTexture" id="AtlasTexture_v6fml"]
+atlas = ExtResource("2_v6fml")
+region = Rect2(3, 151, 80, 202)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3li8b"]
+atlas = ExtResource("2_v6fml")
+region = Rect2(83, 151, 80, 202)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_mdl7e"]
+atlas = ExtResource("2_v6fml")
+region = Rect2(163, 151, 80, 202)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qu4a1"]
+atlas = ExtResource("2_v6fml")
+region = Rect2(403, 151, 80, 202)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_70d11"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"idle",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_v6fml")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3li8b")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_mdl7e")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qu4a1")
+}],
+"loop": false,
+"name": &"run",
+"speed": 10.0
+}]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_v6fml"]
+radius = 23.0
+height = 46.0
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_v6fml"]
-radius = 34.0588
+radius = 24.0832
 
 [node name="Player" type="CharacterBody2D"]
 script = ExtResource("1_p0vlq")
 
-[node name="Sprite" type="Sprite2D" parent="."]
-position = Vector2(540, 284)
-scale = Vector2(0.170382, 0.178572)
-texture = ExtResource("2_v6fml")
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+position = Vector2(553, 83)
+scale = Vector2(0.511832, 0.498148)
+sprite_frames = SubResource("SpriteFrames_70d11")
+animation = &"run"
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(539, 281)
-shape = SubResource("RectangleShape2D_v6fml")
-
-[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(553, 86)
+shape = SubResource("CapsuleShape2D_v6fml")
 
 [node name="TagArea" type="Area2D" parent="."]
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="TagArea"]
-position = Vector2(540, 283)
+position = Vector2(553, 86)
 shape = SubResource("CircleShape2D_v6fml")
