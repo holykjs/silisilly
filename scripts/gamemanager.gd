@@ -2,94 +2,170 @@ extends Node
 
 @export var PlayerScene: PackedScene
 @export var tag_mode: String = "transfer" # "transfer" or "freeze"
-@export var tag_cooldown: float = 1.5   # seconds of invulnerability after tag
+@export var tag_cooldown: float = 1.5
+@export var round_time: float = 120.0
+@export var player_skins: Array[Resource] = []
 
-var players := {}          # peer_id -> node (populated by rpc_create_player)
-var players_order := []    # list of peer ids (creation order)
-var current_tagger := -1   # peer id of current Sili (server authoritative)
-var frozen_set := {}       # peer_id -> true
-var last_tag_time := {}   # peer_id -> float (timestamp)
+var players := {}
+var players_order := []
+var current_tagger := -1
+var frozen_set := {}
+var last_tag_time := {}
+
+var round_timer: Timer
+var round_end_time: float = 0.0
+var used_spawns: Array = []
+
+@onready var timer_label: Label = $CanvasLayer/RoundTimerLabel
+@onready var round_message_label: Label = $CanvasLayer/RoundMessageLabel
+@onready var spawn_points = $SpawnPoints.get_children()
 
 func _ready() -> void:
 	randomize()
+	if timer_label:
+		timer_label.text = ""
+	if round_message_label:
+		round_message_label.visible = false
+		round_message_label.modulate.a = 0.0  # start transparent
+	set_process(true)
+
+# ---------------- client -> server spawn request ----------------
+@rpc("any_peer")
+func rpc_request_spawn(requesting_peer_id:int) -> void:
+	if not multiplayer.is_server():
+		return
+	_spawn_player(requesting_peer_id)
+
+func _spawn_player(peer_id:int) -> void:
+	var spawn_pos := Vector2.ZERO
+	var available_spawns = spawn_points.filter(func(s): return not used_spawns.has(s))
+
+	if available_spawns.is_empty():
+		# fallback if all spawns used — pick any
+		spawn_pos = spawn_points[randi() % spawn_points.size()].global_position
+	else:
+		var spawn = available_spawns[randi() % available_spawns.size()]
+		spawn_pos = spawn.global_position
+		used_spawns.append(spawn)
+
+	# Random skin index
+	var skin_idx := -1
+	if player_skins.size() > 0:
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		skin_idx = rng.randi_range(0, player_skins.size() - 1)
+
+	rpc("rpc_create_player", peer_id, spawn_pos, skin_idx)
 
 # ---------------- spawn flow ----------------
 @rpc("any_peer")
-func rpc_create_player(peer_id:int, pos:Vector2) -> void:
-	# This RPC will be called on every client-server so each peer creates local Player instances
+func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 	var root = get_tree().current_scene
 	if not root:
 		return
-	# lazy-load packed scene if not assigned
 	if not PlayerScene:
 		PlayerScene = load("res://scenes/Player.tscn")
 	var player = PlayerScene.instantiate()
 	player.global_position = pos
 	player.peer_id = peer_id
-	# mark local instance
 	player.is_local = (peer_id == multiplayer.get_unique_id())
+
+	if skin_idx >= 0 and skin_idx < player_skins.size() and player.has_method("set_skin"):
+		player.set_skin(player_skins[skin_idx])
+
 	root.get_node("Players").add_child(player)
 	players[peer_id] = player
 	if not players_order.has(peer_id):
 		players_order.append(peer_id)
-	print("[GM] created player for peer:", peer_id)
+	print("[GM] created player for peer:", peer_id, " skin_idx:", skin_idx)
 
 # ---------------- start / pick random tagger ----------------
 func start_new_round() -> void:
 	if players_order.is_empty():
 		print("[GM] no players to pick")
 		return
-	# clear frozen state
 	frozen_set.clear()
 
-	# pick a random index
+	# reset spawn usage
+	used_spawns.clear()
+
+	# respawn all players at new positions
+	for pid in players_order:
+		if multiplayer.is_server():
+			_spawn_player(pid)
+
 	var rng = RandomNumberGenerator.new()
 	rng.randomize()
 	var idx = rng.randi_range(0, players_order.size() - 1)
 	current_tagger = players_order[idx]
 
-	# broadcast new tagger to all peers
 	rpc("rpc_set_tagger", current_tagger)
 
-	# ensure all clients clear frozen visuals
 	for pid in players.keys():
 		rpc("rpc_set_frozen", pid, false)
 
 	print("[GM] New round started. Tagger:", current_tagger)
 
+	if round_timer:
+		round_timer.stop()
+		round_timer.queue_free()
+
+	round_timer = Timer.new()
+	round_timer.wait_time = round_time
+	round_timer.one_shot = true
+	add_child(round_timer)
+	round_timer.timeout.connect(_on_round_timer_timeout)
+	round_timer.start()
+
+	round_end_time = Time.get_unix_time_from_system() + round_time
+	rpc("rpc_round_timer_start", round_end_time)
+
+	rpc("rpc_show_round_message", "New Round! Tagger chosen...", 3.0)
+
+func _process(delta: float) -> void:
+	if round_end_time > 0:
+		var now = Time.get_unix_time_from_system()
+		var time_left = max(round_end_time - now, 0)
+		if timer_label:
+			timer_label.text = "Time Left: " + str(time_left as int) + "s"
+	else:
+		if timer_label:
+			timer_label.text = ""
+
+# ---------------- set tagger ----------------
 @rpc("any_peer")
 func rpc_set_tagger(peer_id:int) -> void:
-	# Called on every peer. Mark visual/flag on Player nodes
 	for pid in players.keys():
 		var p = players.get(pid, null)
 		if p and p.has_method("set_sili"):
 			p.set_sili(pid == peer_id)
 
-# ---------------- tag/rescue (server authoritative) ----------------
+	if peer_id == multiplayer.get_unique_id():
+		show_round_message("You are the TAGGER!", 3.0)
+	else:
+		show_round_message("Avoid the TAGGER!", 3.0)
+
+# ---------------- tag/rescue ----------------
 @rpc("any_peer")
 func rpc_request_tag(acting_peer:int, target_peer:int):
 	if not multiplayer.is_server(): 
 		return
 	if acting_peer != current_tagger and not _is_ai(acting_peer):
-		# only current tagger (or AI) can tag
 		return
 
-	# --- Cooldown check ---
 	var now = Time.get_unix_time_from_system()
 	if last_tag_time.has(target_peer):
 		var elapsed = now - last_tag_time[target_peer]
 		if elapsed < tag_cooldown:
 			if OS.is_debug_build():
-				print("Tag blocked — target still invulnerable:", target_peer)
+				print("[GM] Tag blocked — target still invulnerable:", target_peer)
 			return
 
-	# Already frozen? Ignore
 	if frozen_set.has(target_peer): 
 		return
 
-	# Freeze the target
 	frozen_set[target_peer] = true
-	last_tag_time[target_peer] = now   # record time of tag
+	last_tag_time[target_peer] = now
 	rpc("rpc_set_frozen", target_peer, true)
 
 	_check_round_end()
@@ -98,43 +174,61 @@ func rpc_request_tag(acting_peer:int, target_peer:int):
 func rpc_request_rescue(requester_peer:int, target_peer:int) -> void:
 	if not multiplayer.is_server():
 		return
-	# validate
 	if frozen_set.has(requester_peer):
 		return
 	if not frozen_set.has(target_peer):
 		return
-	# unfreeze
+
 	frozen_set.erase(target_peer)
 	rpc("rpc_set_frozen", target_peer, false)
+
+	last_tag_time[target_peer] = Time.get_unix_time_from_system()
 	print("[GM] rescue:", requester_peer, "->", target_peer)
 
 @rpc("any_peer")
 func rpc_set_frozen(peer_id:int, value:bool) -> void:
-	# Called on all peers to update visuals/state
 	var p = players.get(peer_id, null)
 	if p and p.has_method("set_frozen"):
 		p.set_frozen(value)
 
 # ---------------- round end ----------------
 func _check_round_end() -> void:
-	# if freeze-mode: check if all non-tagger players frozen => Sili wins
 	if tag_mode == "freeze":
 		for pid in players_order:
 			if pid == current_tagger:
 				continue
 			if not frozen_set.has(pid):
 				return
-		# all frozen -> round end
 		rpc("rpc_round_end", current_tagger)
+
+func _on_round_timer_timeout():
+	rpc("rpc_round_end", -1)
 
 @rpc("any_peer")
 func rpc_round_end(winner_peer:int) -> void:
-	print("[GM] Round ended. Winner:", winner_peer)
-	# clear frozen visuals on clients
+	if winner_peer == -1:
+		print("[GM] Round ended. Time’s up! Non-taggers win.")
+		rpc("rpc_show_round_message", "Time’s up! Runners win!", 3.0)
+	else:
+		print("[GM] Round ended. Winner:", winner_peer)
+		if winner_peer == current_tagger:
+			rpc("rpc_show_round_message", "Tagger Wins!", 3.0)
+		else:
+			rpc("rpc_show_round_message", "Runners Win!", 3.0)
+
+	if round_timer:
+		round_timer.stop()
+		round_timer.queue_free()
+		round_timer = null
+
 	frozen_set.clear()
 	for pid in players.keys():
 		rpc("rpc_set_frozen", pid, false)
-	# optionally auto-start a new round on server
+
+	round_end_time = 0
+	if timer_label:
+		timer_label.text = "Round Over!"
+
 	if multiplayer.is_server():
 		await get_tree().create_timer(3.0).timeout
 		start_new_round()
@@ -142,3 +236,26 @@ func rpc_round_end(winner_peer:int) -> void:
 # ---------------- helpers ----------------
 func _is_ai(peer_id:int) -> bool:
 	return false
+
+@rpc("any_peer")
+func rpc_round_timer_start(end_time: float):
+	round_end_time = end_time
+
+# ---------------- UI message helpers ----------------
+@rpc("any_peer")
+func rpc_show_round_message(text: String, duration: float = 2.0):
+	show_round_message(text, duration)
+
+func show_round_message(text: String, duration: float = 2.0):
+	if not round_message_label:
+		return
+	round_message_label.text = text
+	round_message_label.visible = true
+
+	var tween = create_tween()
+	round_message_label.modulate.a = 0.0
+	tween.tween_property(round_message_label, "modulate:a", 1.0, 0.5) # fade in
+	tween.tween_interval(duration)
+	tween.tween_property(round_message_label, "modulate:a", 0.0, 0.5) # fade out
+	await tween.finished
+	round_message_label.visible = false

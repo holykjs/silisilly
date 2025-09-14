@@ -1,9 +1,14 @@
-[gd_scene load_steps=2 format=3 uid="uid://cy3x0o8a701uv"]
+[gd_scene load_steps=6 format=3 uid="uid://cy3x0o8a701uv"]
 
 [ext_resource type="Script" uid="uid://shavto1hxw3q" path="res://scripts/gamemanager.gd" id="1_34tde"]
+[ext_resource type="SpriteFrames" uid="uid://dbpccao43quo7" path="res://skins/skin_01.tres" id="2_rtub8"]
+[ext_resource type="SpriteFrames" uid="uid://cnbswwg1uy8n0" path="res://skins/skin_02.tres" id="3_jg7te"]
+[ext_resource type="SpriteFrames" uid="uid://cjcq5pnx1gorq" path="res://skins/skin_03.tres" id="4_mx40s"]
+[ext_resource type="SpriteFrames" uid="uid://bj2g4yjb5prvj" path="res://skins/skin_04.tres" id="5_2uts2"]
 
 [node name="GameManager" type="Node2D"]
 script = ExtResource("1_34tde")
+player_skins = Array[Resource]([ExtResource("2_rtub8"), ExtResource("3_jg7te"), ExtResource("4_mx40s"), ExtResource("5_2uts2")])
 
 [node name="RoundTimer" type="Timer" parent="."]
 one_shot = true
@@ -11,14 +16,19 @@ one_shot = true
 [node name="SpawnPoints" type="Node2D" parent="."]
 
 [node name="Spawn1" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(889, 385)
 
 [node name="Spawn2" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(199, 374)
 
 [node name="Spawn3" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(513, 195)
 
 [node name="Spawn4" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(930, 130)
 
 [node name="Spawn5" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(125, 113)
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
@@ -26,6 +36,21 @@ one_shot = true
 offset_right = 40.0
 offset_bottom = 23.0
 
-[node name="RoundLabel" type="Label" parent="HUD"]
-offset_right = 40.0
+[node name="RoundMessageLabel" type="Label" parent="HUD"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="RoundTimerLabel" type="Label" parent="HUD"]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -20.0
+offset_right = 20.0
 offset_bottom = 23.0
+grow_horizontal = 2

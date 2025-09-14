@@ -19,9 +19,18 @@ var water_overlap_count: int = 0
 @onready var anim_sprite: AnimatedSprite2D = $Sprite
 @onready var tag_area: Area2D = $TagArea
 
+# track nearby players via TagArea signals
+var nearby_players: Array = []
+
 func _ready() -> void:
 	if debug:
 		print("[PLAYER] ready — peer_id:", peer_id, " is_local:", is_local)
+	# connect TagArea signals (Godot 4 Callable syntax)
+	if tag_area:
+		if not tag_area.is_connected("body_entered", Callable(self, "_on_tag_area_body_entered")):
+			tag_area.connect("body_entered", Callable(self, "_on_tag_area_body_entered"))
+		if not tag_area.is_connected("body_exited", Callable(self, "_on_tag_area_body_exited")):
+			tag_area.connect("body_exited", Callable(self, "_on_tag_area_body_exited"))
 
 func is_network_player() -> bool:
 	return true
@@ -90,7 +99,56 @@ func _play_anim(name: String) -> void:
 	if anim_sprite.animation != name or not anim_sprite.is_playing():
 		anim_sprite.play(name)
 
-# Water detection (counter for overlaps)
+# ---------------- TagArea signal handlers ----------------
+func _on_tag_area_body_entered(body: Node) -> void:
+	if body == self:
+		return
+	if body.has_method("is_network_player"):
+		if not nearby_players.has(body):
+			nearby_players.append(body)
+		if debug:
+			print("[PLAYER] nearby added:", body.name)
+
+func _on_tag_area_body_exited(body: Node) -> void:
+	if body == self:
+		return
+	if nearby_players.has(body):
+		nearby_players.erase(body)
+		if debug:
+			print("[PLAYER] nearby removed:", body.name)
+
+# ---------------- Tagging / Rescue attempts (client asks server) ----------------
+func _attempt_tag() -> void:
+	if frozen or not is_sili:
+		if debug: print("[PLAYER] cannot tag (frozen or not sili)")
+		return
+
+	for p in nearby_players:
+		if not p: continue
+		if p == self: continue
+		if p.has_method("is_network_player") and p.peer_id != peer_id:
+			# ask the server to validate tag (server is usually peer id 1)
+			rpc_id(1, "rpc_request_tag", peer_id, p.peer_id)
+			if debug: print("[PLAYER] requested tag ->", p.peer_id)
+			return
+	if debug:
+		print("[PLAYER] no target found to tag")
+
+func _attempt_rescue() -> void:
+	if frozen:
+		return
+
+	for p in nearby_players:
+		if not p: continue
+		if p == self: continue
+		if p.has_method("is_network_player") and p.frozen:
+			rpc_id(1, "rpc_request_rescue", peer_id, p.peer_id)
+			if debug: print("[PLAYER] requested rescue ->", p.peer_id)
+			return
+	if debug:
+		print("[PLAYER] no frozen target nearby")
+
+# ---------------- Water detection (counter for overlaps) ----------------
 func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group("water"):
 		water_overlap_count += 1
@@ -103,31 +161,23 @@ func _on_area_exited(area: Area2D) -> void:
 		is_in_water = water_overlap_count > 0
 		if debug: print("[PLAYER] Exited water:", water_overlap_count)
 
-# ---------------- Tagging / Rescue attempts (client asks server) ----------------
-func _attempt_tag() -> void:
-	if not tag_area:
-		return
-	# find overlapping player bodies
-	var bodies = tag_area.get_overlapping_bodies()
-	for b in bodies:
-		if b == self:
-			continue
-		# requires the target to be a Player-like node
-		if b.has_method("is_network_player") and b.peer_id != peer_id:
-			# ask the server to validate tag
-			# server is normally peer id 1
-			rpc_id(1, "rpc_request_tag", peer_id, b.peer_id)
-			if debug: print("[PLAYER] requested tag ->", b.peer_id)
-			return
-
-func _attempt_rescue() -> void:
-	if not tag_area:
-		return
-	var bodies = tag_area.get_overlapping_bodies()
-	for b in bodies:
-		if b == self:
-			continue
-		if b.has_method("is_network_player") and b.frozen:
-			rpc_id(1, "rpc_request_rescue", peer_id, b.peer_id)
-			if debug: print("[PLAYER] requested rescue ->", b.peer_id)
-			return
+func set_skin(skin: Resource) -> void:
+	# Primary path: SpriteFrames resource for AnimatedSprite2D
+	if skin is SpriteFrames:
+		anim_sprite.sprite_frames = skin
+		# switch to a default animation if needed (e.g., "idle")
+		if anim_sprite.has_animation("idle"):
+			anim_sprite.animation = "idle"
+			anim_sprite.play()
+	# Fallback: if a single Texture2D is provided, create a simple one-frame SpriteFrames
+	elif skin is Texture2D:
+		var frames := SpriteFrames.new()
+		# give it an "idle" animation with a single frame
+		frames.add_animation("idle")
+		frames.add_frame("idle", skin)
+		anim_sprite.sprite_frames = frames
+		anim_sprite.animation = "idle"
+		anim_sprite.play()
+	else:
+		if debug:
+			print("[PLAYER] set_skin: Unsupported resource type:", skin)
