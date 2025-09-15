@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b7t5ob6t2ln14"
-path="res://.godot/imported/lobby_bg.png-ed2355298b89d91f82a8509a1258e7bd.ctex"
+uid="uid://c0a1lh2v0u5ua"
+path="res://.godot/imported/buttonLong_grey_pressed.png-34ed3928839cfdfee7bda48fb1d5845f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/background/lobby_bg.png"
-dest_files=["res://.godot/imported/lobby_bg.png-ed2355298b89d91f82a8509a1258e7bd.ctex"]
+source_file="res://assets/gui/buttonLong_grey_pressed.png"
+dest_files=["res://.godot/imported/buttonLong_grey_pressed.png-34ed3928839cfdfee7bda48fb1d5845f.ctex"]
 
 [params]
 

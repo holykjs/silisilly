@@ -53,6 +53,14 @@ radius = 24.0832
 
 [node name="Player" type="CharacterBody2D"]
 script = ExtResource("1_p0vlq")
+speed = null
+jump_force = null
+gravity = null
+water_speed = null
+water_jump_force = null
+water_gravity = null
+is_local = null
+debug = null
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(553, 86)
@@ -70,3 +78,9 @@ collision_layer = 2
 [node name="CollisionShape2D" type="CollisionShape2D" parent="TagArea"]
 position = Vector2(553, 86)
 shape = SubResource("CircleShape2D_v6fml")
+
+[node name="NameLabel" type="Label" parent="."]
+offset_top = -40.0
+offset_right = 66.0
+offset_bottom = -17.0
+horizontal_alignment = 1

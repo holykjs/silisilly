@@ -1,7 +1,7 @@
 extends Control
 
-@onready var map_option := $VBoxContainer/MapOption
-@onready var start_button := $VBoxContainer/StartButton
+@onready var map_option := $MapOption
+@onready var start_button := $StartButton
 
 # Map names to scene paths (auto-detected)
 var map_scenes = {}

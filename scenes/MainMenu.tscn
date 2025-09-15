@@ -1,16 +1,55 @@
-[gd_scene load_steps=3 format=3 uid="uid://dybslmv0ghto"]
+[gd_scene load_steps=18 format=3 uid="uid://dybslmv0ghto"]
 
 [ext_resource type="Script" uid="uid://b0dlgmgt1xqvt" path="res://scripts/main_menu.gd" id="1_yqorp"]
-[ext_resource type="Texture2D" uid="uid://d08dernufq1oe" path="res://assets/background/lobby_bg.png" id="2_0ykhv"]
+[ext_resource type="Texture2D" uid="uid://b7t5ob6t2ln14" path="res://assets/background/lobby_bg.png" id="2_0ykhv"]
+[ext_resource type="Texture2D" uid="uid://b3pxbwme6s0wo" path="res://assets/gui/18.png" id="3_2wh52"]
+[ext_resource type="Texture2D" uid="uid://cbdxptfxkaxos" path="res://assets/gui/buttonLong_brown_pressed.png" id="4_l72w3"]
+[ext_resource type="Texture2D" uid="uid://qp6fufqcyl8r" path="res://assets/gui/buttonLong_brown.png" id="5_826wr"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_ow34m"]
+texture = ExtResource("3_2wh52")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_l72w3"]
+texture = ExtResource("3_2wh52")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_826wr"]
+texture = ExtResource("3_2wh52")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_ucygd"]
+texture = ExtResource("3_2wh52")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_bky6r"]
+texture = ExtResource("5_826wr")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_l4mxc"]
+texture = ExtResource("5_826wr")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_5faoh"]
+texture = ExtResource("4_l72w3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_ptake"]
+texture = ExtResource("5_826wr")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_mipys"]
+texture = ExtResource("5_826wr")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_8a8k8"]
+texture = ExtResource("5_826wr")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_7la6k"]
+texture = ExtResource("4_l72w3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_2nypq"]
+texture = ExtResource("5_826wr")
 
 [node name="MainMenu" type="Control" node_paths=PackedStringArray("host_btn", "join_btn", "quit_btn", "ip_input")]
 layout_mode = 3
 anchors_preset = 0
 script = ExtResource("1_yqorp")
-host_btn = NodePath("MarginContainer/VBoxContainer/HostButton")
-join_btn = NodePath("MarginContainer/VBoxContainer/HBoxContainer/JoinButton")
-quit_btn = NodePath("MarginContainer/VBoxContainer/QuitButton")
-ip_input = NodePath("MarginContainer/VBoxContainer/HBoxContainer/IpInput")
+host_btn = NodePath("HostButton")
+join_btn = NodePath("HostButton/HBoxContainer/JoinButton")
+quit_btn = NodePath("HostButton/HBoxContainer/JoinButton/QuitButton")
+ip_input = NodePath("HostButton/HBoxContainer/IpInput")
 
 [node name="TextureRect" type="TextureRect" parent="."]
 layout_mode = 0
@@ -21,43 +60,55 @@ texture = ExtResource("2_0ykhv")
 expand_mode = 2
 stretch_mode = 6
 
-[node name="Background" type="ColorRect" parent="."]
-visible = false
-layout_mode = 0
-offset_right = 1151.0
-offset_bottom = 648.0
-color = Color(0.0745098, 0.188235, 0.12549, 1)
-
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="HostButton" type="Button" parent="."]
+custom_minimum_size = Vector2(200, 60)
 layout_mode = 2
-offset_left = 447.0
-offset_top = 262.0
-offset_right = 763.0
-offset_bottom = 411.0
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
-layout_mode = 2
-alignment = 2
-
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="HostButton" type="Button" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
+offset_left = 438.0
+offset_top = 204.0
+offset_right = 638.0
+offset_bottom = 326.0
+size_flags_vertical = 4
+theme_override_styles/disabled = SubResource("StyleBoxTexture_ow34m")
+theme_override_styles/hover = SubResource("StyleBoxTexture_l72w3")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_826wr")
+theme_override_styles/normal = SubResource("StyleBoxTexture_ucygd")
 text = "Host Game"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="HostButton"]
 layout_mode = 2
+offset_left = -81.0
+offset_top = 103.0
+offset_right = 289.0
+offset_bottom = 134.0
 alignment = 1
 
-[node name="IpInput" type="LineEdit" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="IpInput" type="LineEdit" parent="HostButton/HBoxContainer"]
 layout_mode = 2
 placeholder_text = "Enter Host IP"
 
-[node name="JoinButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="JoinButton" type="Button" parent="HostButton/HBoxContainer"]
 layout_mode = 2
+theme_override_styles/disabled = SubResource("StyleBoxTexture_bky6r")
+theme_override_styles/hover = SubResource("StyleBoxTexture_l4mxc")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_5faoh")
+theme_override_styles/normal = SubResource("StyleBoxTexture_ptake")
 text = "Join Game"
 
-[node name="QuitButton" type="Button" parent="MarginContainer/VBoxContainer"]
+[node name="QuitButton" type="Button" parent="HostButton/HBoxContainer/JoinButton"]
 layout_mode = 2
+offset_left = -79.0
+offset_top = 43.0
+offset_right = 90.0
+offset_bottom = 89.0
+theme_override_styles/disabled = SubResource("StyleBoxTexture_mipys")
+theme_override_styles/hover = SubResource("StyleBoxTexture_8a8k8")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_7la6k")
+theme_override_styles/normal = SubResource("StyleBoxTexture_2nypq")
 text = "Quit"
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+offset_left = 64.0
+offset_top = 431.0
+offset_right = 380.0
+offset_bottom = 580.0

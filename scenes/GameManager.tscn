@@ -33,8 +33,10 @@ position = Vector2(125, 113)
 [node name="HUD" type="CanvasLayer" parent="."]
 
 [node name="SiliLabel" type="Label" parent="HUD"]
-offset_right = 40.0
-offset_bottom = 23.0
+offset_left = 1074.0
+offset_top = 34.0
+offset_right = 1114.0
+offset_bottom = 57.0
 
 [node name="RoundMessageLabel" type="Label" parent="HUD"]
 visible = false

@@ -18,6 +18,7 @@ var water_overlap_count: int = 0
 
 @onready var anim_sprite: AnimatedSprite2D = $Sprite
 @onready var tag_area: Area2D = $TagArea
+@onready var name_label: Label = $NameLabel
 
 # track nearby players via TagArea signals
 var nearby_players: Array = []
@@ -181,3 +182,26 @@ func set_skin(skin: Resource) -> void:
 	else:
 		if debug:
 			print("[PLAYER] set_skin: Unsupported resource type:", skin)
+
+func respawn(pos: Vector2) -> void:
+	# move and reset the player on this client
+	global_position = pos
+	velocity = Vector2.ZERO
+	frozen = false
+	is_in_water = false
+	water_overlap_count = 0
+	# visual reset
+	if anim_sprite:
+		if anim_sprite.has_animation("idle"):
+			anim_sprite.play("idle")
+		else:
+			anim_sprite.stop()
+	# optionally reset other flags
+	is_sili = false
+	if name_label:
+		# keep the same name text; no change required
+		pass
+		
+func _process(delta: float) -> void:
+	if name_label:
+		name_label.position = Vector2(0, -40)  # stays above player
