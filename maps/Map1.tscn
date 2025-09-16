@@ -1,10 +1,11 @@
-[gd_scene load_steps=13 format=3 uid="uid://4dmo5fx85lnf"]
+[gd_scene load_steps=14 format=3 uid="uid://4dmo5fx85lnf"]
 
 [ext_resource type="Texture2D" uid="uid://bk1xd1xta1wmb" path="res://assets/background/Map1_BG.png" id="1_oicbt"]
 [ext_resource type="TileSet" uid="uid://b2eehst0nvoyj" path="res://assets/addons/kenney pixel platformer/tile sets/terrain_tile_set.tres" id="2_63i5o"]
 [ext_resource type="Script" uid="uid://qlnai2e5ffuk" path="res://scripts/pointer.gd" id="3_55yl8"]
 [ext_resource type="PackedScene" uid="uid://ye8gt3t4sdbh" path="res://scenes/HUD.tscn" id="4_tuf7a"]
 [ext_resource type="PackedScene" uid="uid://crt1bqu3w2gl0" path="res://scenes/Player.tscn" id="5_bsx1b"]
+[ext_resource type="PackedScene" uid="uid://cy3x0o8a701uv" path="res://scenes/GameManager.tscn" id="6_63i5o"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_wcqb1"]
 size = Vector2(235.75, 41)
@@ -115,6 +116,8 @@ shape = SubResource("RectangleShape2D_hyr6f")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="WaterArea/Area2D2"]
 position = Vector2(720.5, 584)
 shape = SubResource("RectangleShape2D_8ln8j")
+
+[node name="GameManager" parent="." instance=ExtResource("6_63i5o")]
 
 [connection signal="area_entered" from="WaterArea/Area2D" to="Pointer" method="_on_area_entered"]
 [connection signal="area_exited" from="WaterArea/Area2D" to="Player" method="_on_area_exited"]
