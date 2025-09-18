@@ -108,6 +108,8 @@ offset_bottom = 441.0
 layout_mode = 2
 texture_normal = ExtResource("6_jp1kc")
 texture_pressed = ExtResource("7_as3ys")
+texture_disabled = ExtResource("7_as3ys")
+texture_focused = ExtResource("7_as3ys")
 
 [node name="Map1Label" type="Label" parent="MapSelectionContainer/Map1Button"]
 material = SubResource("ShaderMaterial_l31xl")
@@ -126,6 +128,8 @@ text = "Grass"
 layout_mode = 2
 texture_normal = ExtResource("8_l31xl")
 texture_pressed = ExtResource("9_wuide")
+texture_disabled = ExtResource("9_wuide")
+texture_focused = ExtResource("9_wuide")
 
 [node name="Map2Label" type="Label" parent="MapSelectionContainer/Map2Button"]
 material = SubResource("ShaderMaterial_wuide")
@@ -144,6 +148,8 @@ text = "ICE"
 layout_mode = 2
 texture_normal = ExtResource("10_h77bf")
 texture_pressed = ExtResource("11_4hpk5")
+texture_disabled = ExtResource("11_4hpk5")
+texture_focused = ExtResource("11_4hpk5")
 
 [node name="Map3Label" type="Label" parent="MapSelectionContainer/Map3Button"]
 material = SubResource("ShaderMaterial_h77bf")

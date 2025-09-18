@@ -1,14 +1,14 @@
 [gd_scene load_steps=6 format=3 uid="uid://cy3x0o8a701uv"]
 
 [ext_resource type="Script" uid="uid://shavto1hxw3q" path="res://scripts/gamemanager.gd" id="1_34tde"]
-[ext_resource type="SpriteFrames" uid="uid://dbpccao43quo7" path="res://skins/skin_01.tres" id="2_rtub8"]
-[ext_resource type="SpriteFrames" uid="uid://cnbswwg1uy8n0" path="res://skins/skin_02.tres" id="3_jg7te"]
-[ext_resource type="SpriteFrames" uid="uid://cjcq5pnx1gorq" path="res://skins/skin_03.tres" id="4_mx40s"]
-[ext_resource type="SpriteFrames" uid="uid://bj2g4yjb5prvj" path="res://skins/skin_04.tres" id="5_2uts2"]
+[ext_resource type="SpriteFrames" uid="uid://cp3dxf1brxva" path="res://assets/player/skins/skin_01.tres" id="2_qppyr"]
+[ext_resource type="SpriteFrames" uid="uid://b7vq2torbdtjy" path="res://assets/player/skins/skin_02.tres" id="3_rtub8"]
+[ext_resource type="SpriteFrames" uid="uid://x8qq2qaok0kj" path="res://assets/player/skins/skin_03.tres" id="4_jg7te"]
+[ext_resource type="SpriteFrames" uid="uid://cypcvmrfbsxif" path="res://assets/player/skins/skin_04.tres" id="5_mx40s"]
 
 [node name="GameManager" type="Node2D"]
 script = ExtResource("1_34tde")
-player_skins = Array[Resource]([ExtResource("2_rtub8"), ExtResource("3_jg7te"), ExtResource("4_mx40s"), ExtResource("5_2uts2")])
+player_skins = Array[Resource]([ExtResource("2_qppyr"), ExtResource("3_rtub8"), ExtResource("4_jg7te"), ExtResource("5_mx40s")])
 
 [node name="RoundTimer" type="Timer" parent="."]
 one_shot = true
@@ -56,3 +56,11 @@ offset_left = -20.0
 offset_right = 20.0
 offset_bottom = 23.0
 grow_horizontal = 2
+
+[node name="StartRoundButton" type="Button" parent="HUD"]
+visible = false
+offset_left = 499.0
+offset_top = 302.0
+offset_right = 669.0
+offset_bottom = 377.0
+text = "START ROUND"
