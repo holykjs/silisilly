@@ -4,6 +4,9 @@ const PORT := 52000
 const MAX_PLAYERS := 5
 var selected_map := "Map1.tscn"
 
+# Local IP discovery
+var local_ip := ""
+
 # New: Dictionary to store player data {peer_id: {name: "PlayerX", character: "Warrior"}}
 var player_data: Dictionary = {}
 
@@ -25,6 +28,8 @@ func host_game():
 		return false # Return false on failure
 	multiplayer.multiplayer_peer = peer
 	print("Hosting on port %d" % PORT)
+	# Compute and cache the local IP for convenience
+	_detect_local_ip()
 	# New: Add host's own data to player_data
 	_add_player(multiplayer.get_unique_id(), "HostPlayer") # You might want a UI for setting name
 	player_list_changed.emit() # Emit signal for UI
@@ -72,19 +77,24 @@ func rpc_update_lobby_map(map_name:String):
 	# You might want to emit a signal here too if your lobby UI needs updating
 
 func _load_map_local(map_name:String):
-	var path = "res://maps/%s" % map_name
-	if not FileAccess.file_exists(path):
-		push_error("Map missing: " + path)
-		return
-	
-	get_tree().change_scene_to_file(path)
-	
-	# once scene loads, clients should request spawn (client side)
-	# We'll handle spawning a bit differently, often in the loaded map scene itself,
-	# or a dedicated GameState manager. For now, keep this here.
-	if not multiplayer.is_server():
-		# Request spawn from the server, passing the client's peer ID
-		rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id()) # RPC to server (peer ID 1)
+    var path = "res://maps/%s" % map_name
+    if not FileAccess.file_exists(path):
+        push_error("Map missing: " + path)
+        return
+    
+    get_tree().change_scene_to_file(path)
+    
+    # If we're the server, also spawn our own player
+    if multiplayer.is_server():
+        rpc_request_spawn(multiplayer.get_unique_id())
+        return
+
+    # once scene loads, clients should request spawn (client side)
+    # We'll handle spawning a bit differently, often in the loaded map scene itself,
+    # or a dedicated GameState manager. For now, keep this here.
+    if not multiplayer.is_server():
+        # Request spawn from the server, passing the client's peer ID
+        rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id()) # RPC to server (peer ID 1)
 
 
 # --- New Multiplayer Signal Callbacks ---
@@ -181,9 +191,43 @@ func rpc_request_spawn(player_id: int):
 	if multiplayer.is_server():
 		# Get the current map scene
 		var current_map_scene = get_tree().current_scene
-		if current_map_scene and current_map_scene.has_method("spawn_player"):
-			# The map scene itself or a manager in it should handle spawning
-			# It needs to be a method callable on the server
-			current_map_scene.spawn_player(player_id, player_data[player_id].name)
-		else:
-			push_warning("Current map scene does not have 'spawn_player' method.")
+		if current_map_scene:
+			# Prefer a dedicated GameManager node if present
+			var gm = current_map_scene.get_node_or_null("GameManager")
+			if gm and gm.has_method("spawn_player"):
+				gm.spawn_player(player_id, player_data[player_id].name)
+				return
+			# Fallback: call on scene root if it implements the method
+			if current_map_scene.has_method("spawn_player"):
+				current_map_scene.spawn_player(player_id, player_data[player_id].name)
+				return
+		push_warning("No 'spawn_player' method found on current map or its GameManager.")
+
+func _detect_local_ip():
+	# Try to find a likely LAN IPv4 address
+	var candidates := IP.get_local_addresses()
+	for addr in candidates:
+		# Skip loopback and IPv6
+		if addr.begins_with("127."):
+			continue
+		if ":" in addr:
+			continue
+		# Common private IPv4 ranges
+		if addr.begins_with("192.168.") or addr.begins_with("10.") or addr.begins_with("172."):
+			local_ip = addr
+			return
+	# Fallback: first IPv4 that's not loopback
+	for addr in candidates:
+		if ":" in addr:
+			continue
+		if not addr.begins_with("127."):
+			local_ip = addr
+			return
+	# Final fallback
+	local_ip = "127.0.0.1"
+
+func get_local_ip() -> String:
+    return local_ip
+
+func get_port() -> int:
+    return PORT

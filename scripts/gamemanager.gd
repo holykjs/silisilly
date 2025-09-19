@@ -247,6 +247,20 @@ func respawn_player(peer_id: int, pos: Vector2, skin_idx: int) -> void:
 # The player script's `set_skin` method handles the actual assignment.
 # We keep `players_skin_indices` on the server and pass the index over RPC.
 
+# ---------------- spawn_player method for NetworkLobby compatibility ----------------
+func spawn_player(peer_id: int, player_name: String) -> void:
+	"""
+	Called by NetworkLobby when a player requests to spawn.
+	This is a wrapper around the existing rpc_request_spawn functionality.
+	"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[GM] spawn_player called for peer_id:", peer_id, " name:", player_name)
+	
+	# Use the existing spawn logic
+	rpc_request_spawn(peer_id)
+
 # ---------------- round flow ----------------
 func start_new_round() -> void:
 	if not multiplayer.is_server():
