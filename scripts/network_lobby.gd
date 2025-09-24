@@ -77,24 +77,24 @@ func rpc_update_lobby_map(map_name:String):
 	# You might want to emit a signal here too if your lobby UI needs updating
 
 func _load_map_local(map_name:String):
-    var path = "res://maps/%s" % map_name
-    if not FileAccess.file_exists(path):
-        push_error("Map missing: " + path)
-        return
-    
-    get_tree().change_scene_to_file(path)
-    
-    # If we're the server, also spawn our own player
-    if multiplayer.is_server():
-        rpc_request_spawn(multiplayer.get_unique_id())
-        return
+	var path = "res://maps/%s" % map_name
+	if not FileAccess.file_exists(path):
+		push_error("Map missing: " + path)
+		return
+	
+	get_tree().change_scene_to_file(path)
+	
+	# If we're the server, also spawn our own player
+	if multiplayer.is_server():
+		rpc_request_spawn(multiplayer.get_unique_id())
+		return
 
-    # once scene loads, clients should request spawn (client side)
-    # We'll handle spawning a bit differently, often in the loaded map scene itself,
-    # or a dedicated GameState manager. For now, keep this here.
-    if not multiplayer.is_server():
-        # Request spawn from the server, passing the client's peer ID
-        rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id()) # RPC to server (peer ID 1)
+	# once scene loads, clients should request spawn (client side)
+	# We'll handle spawning a bit differently, often in the loaded map scene itself,
+	# or a dedicated GameState manager. For now, keep this here.
+	if not multiplayer.is_server():
+		# Request spawn from the server, passing the client's peer ID
+		rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id()) # RPC to server (peer ID 1)
 
 
 # --- New Multiplayer Signal Callbacks ---
@@ -227,7 +227,7 @@ func _detect_local_ip():
 	local_ip = "127.0.0.1"
 
 func get_local_ip() -> String:
-    return local_ip
+	return local_ip
 
 func get_port() -> int:
-    return PORT
+	return PORT

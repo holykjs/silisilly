@@ -3,16 +3,22 @@ extends Control
 # Export buttons so you can assign them in the Inspector
 @export var host_btn: Button
 @export var join_btn: Button
+@export var single_player_btn: Button
 @export var quit_btn: Button
 @export var ip_input: LineEdit
 
 # UI feedback
 var status_label: Label
 
+# Background music (now handled by AudioManager)
+# @onready var background_music: AudioStreamPlayer = $BackgroundMusic
+
 func _ready() -> void:
 	# Connect signals safely
 	host_btn.pressed.connect(_on_host_pressed)
 	join_btn.pressed.connect(_on_join_pressed)
+	if single_player_btn:
+		single_player_btn.pressed.connect(_on_single_player_pressed)
 	quit_btn.pressed.connect(_on_quit_pressed)
 	
 	# Create status label for feedback
@@ -22,8 +28,18 @@ func _ready() -> void:
 	status_label.position = Vector2(400, 400)
 	status_label.size = Vector2(400, 50)
 	add_child(status_label)
+	
+	# Start menu music via AudioManager
+	if has_node("/root/AudioManager"):
+		AudioManager.play_menu_music()
+	else:
+		print("[MainMenu] AudioManager not found - add it as autoload in Project Settings")
 
 func _on_host_pressed() -> void:
+	# Play button sound
+	if has_node("/root/AudioManager"):
+		AudioManager.play_button_sound()
+	
 	# Start hosting
 	status_label.text = "Starting server..."
 	var success = NetworkLobby.host_game()
@@ -35,6 +51,10 @@ func _on_host_pressed() -> void:
 		status_label.text = "Failed to start server. Check if port 52000 is available."
 
 func _on_join_pressed() -> void:
+	# Play button sound
+	if has_node("/root/AudioManager"):
+		AudioManager.play_button_sound()
+	
 	# Use IP from input, fallback to localhost
 	var ip = ip_input.text.strip_edges()
 	if ip == "":
@@ -54,5 +74,38 @@ func _on_join_pressed() -> void:
 	else:
 		status_label.text = "Failed to connect. Check IP address."
 
+func _on_single_player_pressed() -> void:
+	# Play button sound
+	if has_node("/root/AudioManager"):
+		AudioManager.play_button_sound()
+	
+	print("[MainMenu] Single Player button clicked!")
+	# Go directly to single-player lobby or start game
+	status_label.text = "Starting Single Player..."
+	
+	# Check if SinglePlayerManager exists (autoload added)
+	if has_node("/root/SinglePlayerManager"):
+		get_node("/root/SinglePlayerManager").setup_game(4, "Normal")
+		print("[MainMenu] SinglePlayerManager found and configured")
+	else:
+		print("[MainMenu] SinglePlayerManager autoload not found - add it in Project Settings > Autoload")
+	
+	print("[MainMenu] Waiting 0.5 seconds...")
+	await get_tree().create_timer(0.5).timeout
+	
+	# Stop menu music before entering game
+	if has_node("/root/AudioManager"):
+		AudioManager.stop_music()
+	
+	# Randomly select a map for single-player
+	var available_maps = ["Map1", "Map2", "Map3", "Map4"]
+	var random_map = available_maps[randi() % available_maps.size()]
+	print("[MainMenu] Loading random map:", random_map)
+	get_tree().change_scene_to_file("res://maps/" + random_map + ".tscn")
+
 func _on_quit_pressed() -> void:
+	# Play button sound
+	if has_node("/root/AudioManager"):
+		AudioManager.play_button_sound()
+	
 	get_tree().quit()

@@ -57,10 +57,16 @@ offset_right = 20.0
 offset_bottom = 23.0
 grow_horizontal = 2
 
-[node name="StartRoundButton" type="Button" parent="HUD"]
-visible = false
-offset_left = 499.0
-offset_top = 302.0
-offset_right = 669.0
-offset_bottom = 377.0
-text = "START ROUND"
+[node name="GameModeLabel" type="Label" parent="HUD"]
+offset_left = 19.0
+offset_top = 17.0
+offset_right = 59.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 14
+
+[node name="PlayerCountLabel" type="Label" parent="HUD"]
+offset_left = 1096.0
+offset_top = 12.0
+offset_right = 1136.0
+offset_bottom = 35.0
+theme_override_font_sizes/font_size = 14

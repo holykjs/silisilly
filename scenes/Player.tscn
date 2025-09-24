@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://crt1bqu3w2gl0"]
+[gd_scene load_steps=5 format=3 uid="uid://crt1bqu3w2gl0"]
 
 [ext_resource type="Script" uid="uid://bra1jxftgyulb" path="res://scripts/player.gd" id="1_p0vlq"]
 
@@ -9,7 +9,10 @@ height = 46.0
 [sub_resource type="CircleShape2D" id="CircleShape2D_v6fml"]
 radius = 24.0832
 
+[sub_resource type="SystemFont" id="SystemFont_p0vlq"]
+
 [node name="Player" type="CharacterBody2D"]
+collision_mask = 3
 script = ExtResource("1_p0vlq")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
@@ -18,8 +21,8 @@ shape = SubResource("CapsuleShape2D_v6fml")
 
 [node name="Sprite" type="AnimatedSprite2D" parent="."]
 position = Vector2(554, 84)
-scale = Vector2(0.0979757, 0.0849687)
-animation = &"run"
+scale = Vector2(0.098, 0.085)
+animation = &""
 
 [node name="TagArea" type="Area2D" parent="."]
 collision_layer = 2
@@ -29,7 +32,20 @@ position = Vector2(553, 86)
 shape = SubResource("CircleShape2D_v6fml")
 
 [node name="NameLabel" type="Label" parent="."]
-offset_top = -40.0
-offset_right = 66.0
-offset_bottom = -17.0
+offset_left = 530.0
+offset_top = 35.0
+offset_right = 572.0
+offset_bottom = 58.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = SubResource("SystemFont_p0vlq")
+theme_override_font_sizes/font_size = 12
 horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NavigationAgent2D" type="NavigationAgent2D" parent="."]
+path_desired_distance = 4.0
+target_desired_distance = 4.0
+path_max_distance = 50.0
+avoidance_enabled = true
+radius = 16.0

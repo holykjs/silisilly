@@ -61,18 +61,17 @@ texture = ExtResource("2_ras1x")
 
 [node name="Label" type="Label" parent="."]
 layout_mode = 2
-offset_left = 497.0
-offset_top = 449.0
-offset_right = 704.0
-offset_bottom = 472.0
-text = "Lobby - Waiting for Players"
+offset_left = 822.0
+offset_top = 508.0
+offset_right = 1032.0
+offset_bottom = 557.0
 
 [node name="StartButton" type="Button" parent="."]
 layout_mode = 2
-offset_left = 475.0
-offset_top = 459.0
-offset_right = 707.0
-offset_bottom = 650.0
+offset_left = 467.0
+offset_top = 464.0
+offset_right = 699.0
+offset_bottom = 655.0
 theme_override_styles/disabled = SubResource("StyleBoxTexture_1yh37")
 theme_override_styles/hover = SubResource("StyleBoxTexture_jp1kc")
 theme_override_styles/pressed = SubResource("StyleBoxTexture_as3ys")
@@ -92,10 +91,11 @@ text = "START"
 
 [node name="PlayerList" type="ItemList" parent="."]
 layout_mode = 2
-offset_left = 582.0
-offset_top = 438.0
-offset_right = 789.0
-offset_bottom = 438.0
+offset_left = 150.0
+offset_top = 483.0
+offset_right = 346.0
+offset_bottom = 578.0
+pivot_offset = Vector2(0, 650)
 
 [node name="MapSelectionContainer" type="HBoxContainer" parent="."]
 layout_mode = 0
@@ -163,3 +163,5 @@ theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_fonts/font = ExtResource("5_jp1kc")
 theme_override_font_sizes/font_size = 50
 text = "SAND"
+
+[connection signal="pressed" from="StartButton" to="." method="_on_start_pressed"]

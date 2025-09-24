@@ -4,6 +4,8 @@ extends Control
 @onready var start_button := $StartButton
 @onready var player_list := $PlayerList
 @onready var lobby_label := $Label
+# Background music now handled by AudioManager
+# @onready var background_music: AudioStreamPlayer = $BackgroundMusic
 var _ui_timer: Timer
 
 # Map names to scene paths (auto-detected)
@@ -17,6 +19,12 @@ var selected_map : String = "Map1"
 
 func _ready():
 	_update_ui()
+	
+	# Start menu music via AudioManager (continues from MainMenu)
+	if has_node("/root/AudioManager"):
+		AudioManager.play_menu_music()
+	else:
+		print("[Lobby] AudioManager not found - add it as autoload in Project Settings")
 
 	# Connect map buttons
 	for button in map_selection_container.get_children():
@@ -68,13 +76,25 @@ func _update_ui():
 			label_node.text = "Lobby - Waiting for Host"
 
 func _on_map_selected(button: TextureButton):
+	# Play button sound
+	if has_node("/root/AudioManager"):
+		AudioManager.play_button_sound()
+	
 	if multiplayer.is_server():
 		selected_map = button.name.replace("Button", "") # e.g. "Map1Button" → "Map1"
 		print("Selected map: ", selected_map)
 		NetworkLobby.set_selected_map(selected_map)
 
 func _on_start_pressed():
+	# Play button sound
+	if has_node("/root/AudioManager"):
+		AudioManager.play_button_sound()
+	
 	if multiplayer.is_server():
+		# Stop menu music before entering game
+		if has_node("/root/AudioManager"):
+			AudioManager.stop_music()
+		
 		NetworkLobby.start_game()
 		if selected_map in map_scenes:
 			get_tree().change_scene_to_file(map_scenes[selected_map])
