@@ -403,8 +403,12 @@ func start_new_round() -> void:
 		rpc("rpc_sync_game_state")
 		await get_tree().create_timer(0.5).timeout
 	
-	# Respawn all players first
+	# Start visual countdown immediately while players are respawning (parallel execution)
+	# Respawn all players first (quick operation)
 	_respawn_all_players()
+	
+	# Then show countdown sequence for both modes
+	await _show_countdown_sequence()
 	
 	# In single-player mode, ALL AI are taggers (survival mode)
 	if is_single_player:
@@ -463,10 +467,10 @@ func start_new_round() -> void:
 	# Ensure network synchronization
 	rpc("rpc_sync_game_state")
 
-	# Wait a moment for players to be fully respawned and ready
-	await get_tree().create_timer(1.0).timeout
+	# Countdown already provided the delay for both single-player and multiplayer
+	# No additional wait needed since countdown gives players time to get ready
 	
-	# Start the timer AFTER players are respawned
+	# Start the timer
 	if round_timer:
 		round_timer.stop()
 		round_timer.queue_free()
@@ -874,15 +878,34 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 	var stats_label = Label.new()
 	stats_label.text = stats_text
 	stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stats_label.position = Vector2(25, 200)
-	stats_label.size = Vector2(300, 40)
-	stats_label.add_theme_font_size_override("font_size", 14)
+	stats_label.position = Vector2(25, 260)
+	stats_label.size = Vector2(300, 30)
+	
+	# Load and apply digital-7.ttf font
+	var digital_font_path = "res://assets/gui/digital-7.ttf"
+	if ResourceLoader.exists(digital_font_path):
+		var digital_font = load(digital_font_path)
+		stats_label.add_theme_font_override("font", digital_font)
+		print("[GM] Using digital-7.ttf font for timer stats")
+	else:
+		print("[GM] digital-7.ttf font not found, using default font")
+	
+	stats_label.add_theme_font_size_override("font_size", 18)
 	stats_label.add_theme_color_override("font_color", Color.WHITE)
+	stats_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	stats_label.add_theme_constant_override("shadow_offset_x", 2)
+	stats_label.add_theme_constant_override("shadow_offset_y", 2)
 	panel.add_child(stats_label)
 	
-	# Create styled buttons
-	_create_styled_button(panel, "New Round", Vector2(75, 280), Vector2(200, 50), Color(1.0, 0.8, 0.2, 1.0), _on_play_again_pressed)
-	_create_styled_button(panel, "Home", Vector2(75, 350), Vector2(200, 50), Color(0.3, 0.6, 1.0, 1.0), _on_main_menu_pressed)
+	# Create styled buttons - horizontally aligned side by side
+	var button_width = 120
+	var button_height = 50
+	var button_spacing = 20
+	var total_width = (button_width * 2) + button_spacing
+	var start_x = (panel.size.x - total_width) / 2
+	
+	_create_styled_button(panel, "New Round", Vector2(start_x, 320), Vector2(button_width, button_height), Color(1.0, 0.8, 0.2, 1.0), _on_play_again_pressed)
+	_create_styled_button(panel, "Home", Vector2(start_x + button_width + button_spacing, 320), Vector2(button_width, button_height), Color(0.3, 0.6, 1.0, 1.0), _on_main_menu_pressed)
 	
 	print("[GM] Created buttons - Play Again and Main Menu")
 	
@@ -1034,6 +1057,68 @@ func _on_main_menu_pressed():
 	_close_end_game_popup()
 	# Return to main menu
 	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+
+func _show_countdown_sequence():
+	"""Show visual countdown sequence for single-player mode"""
+	print("[GM] Starting visual countdown sequence")
+	
+	# Create countdown overlay
+	var countdown_overlay = Control.new()
+	countdown_overlay.name = "CountdownOverlay"
+	countdown_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	countdown_overlay.z_index = 200  # Above everything else
+	add_child(countdown_overlay)
+	
+	# Create countdown label - explicitly centered
+	var countdown_label = Label.new()
+	countdown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	countdown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	
+	# Get screen size and center the label
+	var screen_size = get_viewport().get_visible_rect().size
+	countdown_label.position = Vector2(0, 0)
+	countdown_label.size = screen_size
+	countdown_label.anchor_left = 0.0
+	countdown_label.anchor_top = 0.0
+	countdown_label.anchor_right = 1.0
+	countdown_label.anchor_bottom = 1.0
+	
+	countdown_label.add_theme_font_size_override("font_size", 120)
+	countdown_label.add_theme_color_override("font_color", Color.WHITE)
+	countdown_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	countdown_label.add_theme_constant_override("shadow_offset_x", 4)
+	countdown_label.add_theme_constant_override("shadow_offset_y", 4)
+	
+	# Load digital font if available
+	var digital_font_path = "res://assets/gui/digital-7.ttf"
+	if ResourceLoader.exists(digital_font_path):
+		var digital_font = load(digital_font_path)
+		countdown_label.add_theme_font_override("font", digital_font)
+		print("[GM] Using digital-7.ttf font for countdown")
+	
+	countdown_overlay.add_child(countdown_label)
+	
+	# Countdown sequence: 3, 2, 1, GO!
+	var countdown_numbers = ["3", "2", "1", "GO!"]
+	var countdown_colors = [Color.YELLOW, Color.ORANGE, Color.RED, Color.GREEN]
+	
+	for i in range(countdown_numbers.size()):
+		countdown_label.text = countdown_numbers[i]
+		countdown_label.add_theme_color_override("font_color", countdown_colors[i])
+		
+		# Scale animation
+		countdown_label.scale = Vector2(0.5, 0.5)
+		var tween = create_tween()
+		tween.tween_property(countdown_label, "scale", Vector2(1.2, 1.2), 0.3)
+		tween.tween_property(countdown_label, "scale", Vector2(1.0, 1.0), 0.2)
+		
+		# Wait for animation and pause
+		await tween.finished
+		await get_tree().create_timer(0.5).timeout
+	
+	# Clean up countdown overlay
+	countdown_overlay.queue_free()
+	print("[GM] Countdown sequence completed")
 
 func _close_end_game_popup():
 	"""Close and cleanup the end game popup"""

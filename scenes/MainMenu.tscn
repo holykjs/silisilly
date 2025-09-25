@@ -1,4 +1,4 @@
-[gd_scene load_steps=24 format=3 uid="uid://dybslmv0ghto"]
+[gd_scene load_steps=28 format=3 uid="uid://dybslmv0ghto"]
 
 [ext_resource type="Script" uid="uid://b0dlgmgt1xqvt" path="res://scripts/main_menu.gd" id="1_yqorp"]
 [ext_resource type="Texture2D" uid="uid://b7t5ob6t2ln14" path="res://assets/background/lobby_bg.png" id="2_0ykhv"]
@@ -6,6 +6,18 @@
 [ext_resource type="Texture2D" uid="uid://qp6fufqcyl8r" path="res://assets/gui/buttonLong_brown.png" id="5_826wr"]
 [ext_resource type="FontFile" uid="uid://biwagp740rum1" path="res://assets/gui/Jember Sketch.ttf" id="6_ucygd"]
 [ext_resource type="Shader" uid="uid://cj5gnnahjhdqu" path="res://scenes/MainMenu.gdshader" id="7_mipys"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_8vx4p"]
+texture = ExtResource("5_826wr")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_tdapf"]
+texture = ExtResource("5_826wr")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_v41fp"]
+texture = ExtResource("4_l72w3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_7shrw"]
+texture = ExtResource("5_826wr")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_826wr"]
 shader = ExtResource("7_mipys")
@@ -95,7 +107,10 @@ offset_left = 440.0
 offset_top = 188.0
 offset_right = 638.0
 offset_bottom = 245.0
-icon = ExtResource("5_826wr")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_8vx4p")
+theme_override_styles/hover = SubResource("StyleBoxTexture_tdapf")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_v41fp")
+theme_override_styles/normal = SubResource("StyleBoxTexture_7shrw")
 
 [node name="Label" type="Label" parent="SinglePlayerButton"]
 material = SubResource("ShaderMaterial_826wr")
@@ -194,10 +209,3 @@ theme_override_font_sizes/font_size = 35
 text = "HOST GAME"
 horizontal_alignment = 1
 vertical_alignment = 1
-
-[node name="MarginContainer" type="MarginContainer" parent="."]
-layout_mode = 2
-offset_left = 64.0
-offset_top = 431.0
-offset_right = 380.0
-offset_bottom = 580.0

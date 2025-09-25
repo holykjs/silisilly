@@ -85,6 +85,7 @@ offset_left = 802.0
 offset_top = 503.0
 offset_right = 1012.0
 offset_bottom = 552.0
+theme_override_fonts/font = ExtResource("5_jp1kc")
 
 [node name="StartButton" type="Button" parent="."]
 layout_mode = 2
@@ -199,6 +200,18 @@ theme_override_styles/disabled = SubResource("StyleBoxTexture_ug4sb")
 theme_override_styles/hover = SubResource("StyleBoxTexture_h77bf")
 theme_override_styles/pressed = SubResource("StyleBoxTexture_5av17")
 theme_override_styles/normal = SubResource("StyleBoxTexture_yy2xu")
+
+[node name="Label" type="Label" parent="BackButton"]
+layout_mode = 0
+offset_left = 45.0
+offset_top = -4.0
+offset_right = 112.0
+offset_bottom = 37.0
+theme_override_colors/font_color = Color(0.843901, 0.711792, 0.569582, 1)
+theme_override_colors/font_outline_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("5_jp1kc")
+theme_override_font_sizes/font_size = 35
+text = "BACK"
 
 [connection signal="pressed" from="StartButton" to="." method="_on_start_pressed"]
 [connection signal="pressed" from="BackButton" to="." method="_on_back_pressed"]
