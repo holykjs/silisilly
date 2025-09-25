@@ -191,8 +191,21 @@ func rpc_request_spawn(requesting_peer_id:int) -> void:
 
 	# Wait a moment for player creation to complete
 	await get_tree().process_frame
+	await get_tree().process_frame  # Extra frame for safety
+	
+	# Verify player was created successfully
+	if not players.has(requesting_peer_id):
+		print("[GM] ERROR: Player", requesting_peer_id, "was not created successfully!")
+		return
+	
+	print("[GM] Player", requesting_peer_id, "created successfully. Total players:", players.size())
+	
 	# After creating the new player's local instance, send the full game state to that peer
 	send_full_state_to_peer(requesting_peer_id)
+	
+	# Force visual state update for all players
+	for pid in players.keys():
+		update_player_visual_state(pid)
 	
 	# Check if we have enough players to start a round
 	_check_auto_start_round()
@@ -240,29 +253,58 @@ func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 	if not players_order.has(peer_id):
 		players_order.append(peer_id)
 
-	print("[GM] created player for peer:", peer_id, " skin_idx:", skin_idx)
+	print("[GM] created player for peer:", peer_id, " skin_idx:", skin_idx, " at position:", pos)
+	print("[GM] Player", peer_id, "is_local:", player_instance.is_local, "multiplayer_authority:", player_instance.get_multiplayer_authority())
+	
+	# Ensure player is visible and properly configured
+	if player_instance.has_node("NameLabel"):
+		var name_label = player_instance.get_node("NameLabel")
+		name_label.text = "Player_" + str(peer_id)
+		name_label.visible = true
+		print("[GM] Set name label for player", peer_id, "to:", name_label.text)
 	
 	# Update visual state after creation
 	call_deferred("update_player_visual_state", peer_id)
+	
+	# Debug: Print all current players
+	print("[GM] All players after creation:")
+	for pid in players.keys():
+		var p = players[pid]
+		print("  Player", pid, ":", p.name, "at", p.global_position, "visible:", p.visible)
 
 # ---------------- server -> client: send full state to a single peer ----------------
 func send_full_state_to_peer(peer_id:int) -> void:
 	if not multiplayer.is_server():
 		return
 
+	print("[GM] Sending full state to peer", peer_id, "- Current players:", players.keys())
+	
 	# Send existing players' data to the new peer
 	for pid in players.keys():
+		if pid == peer_id:
+			continue  # Don't send the peer their own player data
+			
 		var p = players.get(pid, null)
-		var pos = p.global_position if p else Vector2.ZERO
-		var skin_idx = players_skin_indices.get(pid, -1) # Get skin index from server record
+		if not p:
+			print("[GM] WARNING: Player", pid, "exists in players dict but node is null")
+			continue
+			
+		var pos = p.global_position
+		var skin_idx = players_skin_indices.get(pid, -1)
+		print("[GM] Sending player", pid, "data to peer", peer_id, "at position", pos)
 		rpc_id(peer_id, "rpc_create_player", pid, pos, skin_idx)
+		
 		if frozen_set.has(pid):
 			rpc_id(peer_id, "rpc_set_frozen", pid, true)
 
 	# Send game state info
-	rpc_id(peer_id, "rpc_set_tagger", current_tagger)
-	if round_end_time > 0:
-		rpc_id(peer_id, "rpc_round_timer_start", round_end_time)
+	print("[GM] Sending game state to peer", peer_id, "- tagger:", current_tagger, "round_active:", round_active)
+	rpc_id(peer_id, "rpc_update_round_state", round_active, current_tagger, round_end_time)
+	
+	# Force visual update for the new peer
+	await get_tree().process_frame
+	for pid in players.keys():
+		rpc_id(peer_id, "rpc_force_visual_update", pid)
 
 # ---------------- respawn players ----------------
 func _respawn_all_players() -> void:
@@ -1031,6 +1073,13 @@ func rpc_update_round_state(is_active: bool, tagger_id: int, end_time: float):
 	
 	print("[GM] Client updated round state: active=", is_active, " tagger=", tagger_id)
 
+# Force visual update for a specific player
+@rpc("any_peer", "reliable")
+func rpc_force_visual_update(peer_id: int):
+	"""Force visual state update for a specific player"""
+	update_player_visual_state(peer_id)
+	print("[GM] Forced visual update for player", peer_id)
+
 func _initialize_ui_elements():
 	"""Initialize UI elements - hide them by default until game starts"""
 	# Hide game UI elements initially
@@ -1242,16 +1291,16 @@ func get_player_node(peer_id: int) -> Node:
 func update_player_visual_state(peer_id: int):
 	"""Update player name color and text based on state"""
 	var player_node = players.get(peer_id, null)
-	if not player_node or not player_node.has_node("NameLabel"):
+	if not player_node:
+		print("[GM] WARNING: Cannot update visual state - player", peer_id, "not found")
+		return
+	
+	if not player_node.has_node("NameLabel"):
+		print("[GM] WARNING: Player", peer_id, "has no NameLabel node")
 		return
 	
 	var name_label = player_node.get_node("NameLabel")
-	var base_name = name_label.text.split(" ")[0]  # Get base name without status
-	if base_name.begins_with("["):
-		# Remove existing status tags
-		var parts = name_label.text.split("] ")
-		if parts.size() > 1:
-			base_name = parts[1]
+	var base_name = "Player_" + str(peer_id)  # Use consistent base name
 	
 	# Reset to base name
 	var display_name = base_name
@@ -1266,15 +1315,15 @@ func update_player_visual_state(peer_id: int):
 			color = Color.GREEN
 			display_name = "[RUNNER] " + base_name
 	else:
-		# Normal mode
-		# AI players are yellow
-		if player_node.has_method("setup_as_ai") and player_node.is_ai:
-			color = Color.YELLOW
-		
-		# Sili (tagger) is red
+		# Normal multiplayer mode
+		# Check if this is the tagger (Sili)
 		if peer_id == current_tagger:
 			color = Color.RED
 			display_name = "[SILI] " + base_name
+		else:
+			# Regular player
+			color = Color.WHITE
+			display_name = base_name
 	
 	# Frozen players are cyan (overrides other colors)
 	if frozen_set.has(peer_id):
@@ -1284,3 +1333,10 @@ func update_player_visual_state(peer_id: int):
 	# Apply changes
 	name_label.text = display_name
 	name_label.modulate = color
+	name_label.visible = true  # Ensure label is visible
+	
+	# Also ensure the player sprite is visible
+	if player_node.has_node("Sprite"):
+		player_node.get_node("Sprite").visible = true
+	
+	print("[GM] Updated visual state for player", peer_id, ":", display_name, "color:", color)

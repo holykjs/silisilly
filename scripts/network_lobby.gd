@@ -27,12 +27,14 @@ func host_game():
 		push_error("Server failed: %s" % str(err))
 		return false # Return false on failure
 	multiplayer.multiplayer_peer = peer
-	print("Hosting on port %d" % PORT)
+	print("[NetworkLobby] Hosting on port %d" % PORT)
 	# Compute and cache the local IP for convenience
 	_detect_local_ip()
-	# New: Add host's own data to player_data
-	_add_player(multiplayer.get_unique_id(), "HostPlayer") # You might want a UI for setting name
+	# Add host's own data to player_data
+	var host_name = "Host (Player1)"
+	_add_player(multiplayer.get_unique_id(), host_name)
 	player_list_changed.emit() # Emit signal for UI
+	print("[NetworkLobby] Host added to player list:", host_name)
 	return true # Return true on success
 
 func join_game(ip:String):
@@ -114,8 +116,11 @@ func _load_map_local(map_name:String):
 	# Now handle player spawning with proper timing
 	if multiplayer.is_server():
 		print("[NetworkLobby] Server requesting spawn for self")
-		# Server spawns itself first
-		rpc_request_spawn(multiplayer.get_unique_id())
+		# Server spawns itself first using GameManager directly
+		var gm = get_tree().current_scene.get_node_or_null("GameManager")
+		if gm and gm.has_method("rpc_request_spawn"):
+			gm.rpc_request_spawn(multiplayer.get_unique_id())
+			print("[NetworkLobby] Server spawn requested via GameManager")
 		# Then notify clients they can spawn
 		await get_tree().create_timer(0.5).timeout
 		rpc("rpc_clients_can_spawn")
@@ -129,15 +134,27 @@ func rpc_clients_can_spawn():
 	if not multiplayer.is_server():
 		print("[NetworkLobby] Client received spawn permission")
 		await get_tree().create_timer(0.1).timeout  # Small delay
-		rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id())
+		# Use GameManager's spawn system directly
+		var gm = get_tree().current_scene.get_node_or_null("GameManager")
+		if gm and gm.has_method("rpc_request_spawn"):
+			gm.rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id())
+			print("[NetworkLobby] Client spawn requested via GameManager")
+		else:
+			print("[NetworkLobby] ERROR: GameManager not found for client spawn")
 
 
 # --- New Multiplayer Signal Callbacks ---
 
 func _on_peer_connected(id: int):
-	print("Peer connected: ", id)
+	print("[NetworkLobby] Peer connected: ", id)
 	if multiplayer.is_server():
-		# Server receives connection, requests client's player data
+		# First, send existing players to the new client
+		print("[NetworkLobby] Sending existing players to new client", id)
+		for existing_id in player_data.keys():
+			var player_info = player_data[existing_id]
+			rpc_id(id, "rpc_add_player", existing_id, player_info.name)
+			
+		# Then request the new client's data
 		rpc_id(id, "rpc_request_player_data")
 		# Send current game state (e.g., selected map) to the new client
 		rpc_id(id, "rpc_update_lobby_map", selected_map)
@@ -172,16 +189,25 @@ func _on_connected_to_server():
 func rpc_client_connection_verified(client_id: int):
 	if multiplayer.is_server():
 		print("[NetworkLobby] Client", client_id, "connection verified")
-		# Server can now safely send data to this client
+		# Ensure player data exists for this client
+		if not player_data.has(client_id):
+			var client_name = "Player" + str(client_id)
+			_add_player(client_id, client_name)
+			player_list_changed.emit()
+			# Broadcast to all clients
+			rpc("rpc_add_player", client_id, client_name)
+			print("[NetworkLobby] Auto-added client", client_id, "and broadcasted to all")
 
 # --- New RPCs for Player Data Sync ---
 
 # Server-side: Adds player to dictionary and broadcasts to all
 @rpc("any_peer", "call_local") # Call_local ensures server's own data is updated
 func rpc_add_player(id: int, name: String):
+	print("[NetworkLobby] rpc_add_player called for:", name, "(", id, ")")
 	_add_player(id, name)
 	player_list_changed.emit()
-	print("Player added via RPC: %s (%d)" % [name, id])
+	print("[NetworkLobby] Player added via RPC and signal emitted:", name, "(", id, ")")
+	print("[NetworkLobby] Current player_data:", player_data)
 
 # Server-side: Removes player from dictionary and broadcasts to all
 @rpc("any_peer", "call_local")
@@ -204,18 +230,15 @@ func rpc_request_player_data():
 @rpc("reliable")
 func rpc_send_player_data(id: int, name: String):
 	if multiplayer.is_server(): # Only server should receive
+		print("[NetworkLobby] Received player data from client", id, ":", name)
 		if not player_data.has(id):
 			_add_player(id, name)
 			player_list_changed.emit()
-			print("Received player data from client %d: %s" % [id, name])
-			# New: Broadcast this new player's data to all other already connected clients
-			for peer_id in player_data.keys():
-				if peer_id != 1 and peer_id != id: # Don't send to self or the new client again
-					rpc_id(peer_id, "rpc_add_player", id, name)
-			# Also send existing players to the new client
-			for existing_id in player_data.keys():
-				if existing_id != 1 and existing_id != id: # Don't send server or new client
-					rpc_id(id, "rpc_add_player", existing_id, player_data[existing_id].name)
+			print("[NetworkLobby] Broadcasting new player", id, "to all clients")
+			# Broadcast this new player's data to ALL clients (including the new one for confirmation)
+			rpc("rpc_add_player", id, name)
+		else:
+			print("[NetworkLobby] Player", id, "already exists in player_data")
 
 
 # Helper function to add player data
@@ -225,24 +248,18 @@ func _add_player(id: int, name: String):
 
 # --- End of New Multiplayer Signal Callbacks & RPCs ---
 
-# --- New: Player Spawning RPC (Server-side) ---
-# This is typically called by a client after a map loads
+# DEPRECATED: This function is now handled by GameManager.rpc_request_spawn() directly
+# Keeping for compatibility but redirecting to GameManager
 @rpc("reliable")
 func rpc_request_spawn(player_id: int):
+	print("[NetworkLobby] DEPRECATED rpc_request_spawn called, redirecting to GameManager")
 	if multiplayer.is_server():
-		# Get the current map scene
-		var current_map_scene = get_tree().current_scene
-		if current_map_scene:
-			# Prefer a dedicated GameManager node if present
-			var gm = current_map_scene.get_node_or_null("GameManager")
-			if gm and gm.has_method("spawn_player"):
-				gm.spawn_player(player_id, player_data[player_id].name)
-				return
-			# Fallback: call on scene root if it implements the method
-			if current_map_scene.has_method("spawn_player"):
-				current_map_scene.spawn_player(player_id, player_data[player_id].name)
-				return
-		push_warning("No 'spawn_player' method found on current map or its GameManager.")
+		# Redirect to GameManager's spawn system
+		var gm = get_tree().current_scene.get_node_or_null("GameManager")
+		if gm and gm.has_method("rpc_request_spawn"):
+			gm.rpc_request_spawn(player_id)
+		else:
+			print("[NetworkLobby] ERROR: GameManager not found for spawn request")
 
 func _detect_local_ip():
 	# Try to find a likely LAN IPv4 address

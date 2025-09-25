@@ -35,8 +35,12 @@ func _ready():
 	start_button.pressed.connect(_on_start_pressed)
 	
 	# Connect to NetworkLobby signals for player list updates
-	NetworkLobby.player_list_changed.connect(_update_player_list)
-	NetworkLobby.player_list_changed.connect(_update_ui)
+	if not NetworkLobby.player_list_changed.is_connected(_update_player_list):
+		NetworkLobby.player_list_changed.connect(_update_player_list)
+		print("[Lobby] Connected to player_list_changed signal")
+	if not NetworkLobby.player_list_changed.is_connected(_update_ui):
+		NetworkLobby.player_list_changed.connect(_update_ui)
+		print("[Lobby] Connected to player_list_changed for UI updates")
 	
 	# Initial player list update
 	_update_player_list()
@@ -73,7 +77,15 @@ func _update_ui():
 				ip = "(detecting...)"
 			label_node.text = "Lobby - Host IP: %s:%d" % [ip, NetworkLobby.get_port()]
 		else:
-			label_node.text = "Lobby - Waiting for Host"
+			# Check if we have player data to show proper status
+			var player_data = NetworkLobby.get_player_data()
+			if player_data.size() > 0:
+				label_node.text = "Lobby - Connected to Host"
+			else:
+				label_node.text = "Lobby - Waiting for Host"
+	
+	# Also update player list when UI updates
+	_update_player_list()
 
 func _on_map_selected(button: TextureButton):
 	# Play button sound
@@ -114,6 +126,8 @@ func _update_player_list():
 	var player_data = NetworkLobby.get_player_data()
 	var player_count = player_data.size()
 	
+	print("[Lobby] Updating player list - Count:", player_count, "Players:", player_data.keys())
+	
 	# Add header
 	player_list.add_item("Connected Players (%d/%d):" % [player_count, NetworkLobby.MAX_PLAYERS])
 	player_list.set_item_disabled(0, true)  # Make header non-selectable
@@ -125,8 +139,12 @@ func _update_player_list():
 		var is_host = (peer_id == 1)
 		var display_name = "%s%s" % [player_name, " (Host)" if is_host else ""]
 		player_list.add_item(display_name)
+		print("[Lobby] Added player to UI:", display_name)
 	
 	# Show waiting message if not enough players
 	if player_count < 2:
 		player_list.add_item("Waiting for more players...")
 		player_list.set_item_disabled(player_list.get_item_count() - 1, true)
+	
+	# Force UI refresh
+	player_list.queue_redraw()
