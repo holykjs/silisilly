@@ -93,9 +93,10 @@ func _on_single_player_pressed() -> void:
 	print("[MainMenu] Waiting 0.5 seconds...")
 	await get_tree().create_timer(0.5).timeout
 	
-	# Stop menu music before entering game
+	# Start single-player music immediately
 	if has_node("/root/AudioManager"):
-		AudioManager.stop_music()
+		AudioManager.play_single_player_music()
+		print("[MainMenu] Started single-player BGM")
 	
 	# Randomly select a map for single-player
 	var available_maps = ["Map1", "Map2", "Map3", "Map4"]

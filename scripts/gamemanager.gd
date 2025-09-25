@@ -56,6 +56,9 @@ func _ready() -> void:
 
 	if timer_label:
 		timer_label.text = ""
+		print("[GM] Timer label found and initialized: ", timer_label.name)
+	else:
+		print("[GM] ERROR: Timer label not found! Check node path: $HUD/RoundTimerLabel")
 	if round_message_label:
 		round_message_label.visible = false
 		round_message_label.modulate.a = 0.0
@@ -375,8 +378,19 @@ func start_new_round() -> void:
 		print("[GM] start_new_round: no players")
 		return
 	
-	# In multiplayer, ensure we have enough human players
-	if multiplayer.has_multiplayer_peer():
+	# Check if we're in single-player mode first
+	var is_single_player = false
+	if has_node("/root/SinglePlayerManager"):
+		var sp_manager = get_node("/root/SinglePlayerManager")
+		is_single_player = sp_manager.is_single_player
+		print("[GM] SinglePlayerManager found, is_single_player: ", is_single_player)
+		print("[GM] Player count: ", players_order.size(), " Players: ", players_order)
+		print("[GM] multiplayer.has_multiplayer_peer(): ", multiplayer.has_multiplayer_peer())
+	else:
+		print("[GM] SinglePlayerManager NOT found - checking multiplayer status")
+	
+	# In multiplayer mode (not single-player), ensure we have enough human players
+	if not is_single_player and multiplayer.has_multiplayer_peer():
 		var human_count = players_order.filter(func(pid): return pid < 1000).size()
 		if human_count < 2:
 			print("[GM] Not enough human players for multiplayer round:", human_count)
@@ -391,12 +405,6 @@ func start_new_round() -> void:
 	
 	# Respawn all players first
 	_respawn_all_players()
-	
-	# Check if we're in single-player mode
-	var is_single_player = false
-	if has_node("/root/SinglePlayerManager"):
-		var sp_manager = get_node("/root/SinglePlayerManager")
-		is_single_player = sp_manager.is_single_player
 	
 	# In single-player mode, ALL AI are taggers (survival mode)
 	if is_single_player:
@@ -455,6 +463,10 @@ func start_new_round() -> void:
 	# Ensure network synchronization
 	rpc("rpc_sync_game_state")
 
+	# Wait a moment for players to be fully respawned and ready
+	await get_tree().create_timer(1.0).timeout
+	
+	# Start the timer AFTER players are respawned
 	if round_timer:
 		round_timer.stop()
 		round_timer.queue_free()
@@ -471,6 +483,8 @@ func start_new_round() -> void:
 
 	rpc("rpc_start_round", current_tagger, round_end_time)
 	rpc("rpc_round_timer_start", round_end_time)
+	
+	print("[GM] Timer started after player respawn - ", round_time, " seconds remaining")
 
 @rpc("any_peer")
 func rpc_start_round(tagger_peer:int, end_time: float) -> void:
@@ -493,9 +507,16 @@ func _process(delta: float) -> void:
 		var now = Time.get_unix_time_from_system()
 		var time_left = max(round_end_time - now, 0)
 		if timer_label:
+			# Format time as [mm]:[ss]
+			var total_seconds = int(time_left)
+			var minutes = total_seconds / 60
+			var seconds = total_seconds % 60
+			var formatted_time = "[%02d]:[%02d]" % [minutes, seconds]
+			
 			# Different UI for survival mode
 			if current_tagger == -1:  # Survival mode
-				timer_label.text = "SURVIVE: " + str(int(time_left)) + "s"
+				var timer_text = "SURVIVE: " + formatted_time
+				timer_label.text = timer_text
 				# Change color based on urgency
 				if time_left <= 20:
 					timer_label.modulate = Color.RED  # Critical time
@@ -503,8 +524,11 @@ func _process(delta: float) -> void:
 					timer_label.modulate = Color.YELLOW  # Warning time
 				else:
 					timer_label.modulate = Color.GREEN  # Safe time
+				# Debug: Print every 5 seconds
+				if int(time_left) % 5 == 0:
+					print("[GM] Timer updated: ", timer_text, " visible: ", timer_label.visible)
 			else:
-				timer_label.text = "Time Left: " + str(int(time_left)) + "s"
+				timer_label.text = "Time Left: " + formatted_time
 				timer_label.modulate = Color.WHITE  # Normal color
 	else:
 		if timer_label:
@@ -751,7 +775,7 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	end_game_popup.add_child(background)
 	
-	# Main panel with gradient background
+	# Main panel with custom or gradient background
 	var panel = TextureRect.new()
 	panel.size = Vector2(350, 500)
 	# Center the panel manually
@@ -761,64 +785,98 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 		(screen_size.y - panel.size.y) / 2
 	)
 	
-	# Create gradient background (teal to purple like in the image)
-	var gradient = Gradient.new()
+	# Try to load custom background assets first
+	var background_texture_path = ""
 	if winner_peer == 1:  # Victory
-		gradient.add_point(0.0, Color(0.2, 0.8, 0.8, 1.0))  # Teal
-		gradient.add_point(1.0, Color(0.3, 0.2, 0.8, 1.0))  # Purple
+		background_texture_path = "res://assets/ui/popup_win_background.png"
 	else:  # Defeat
-		gradient.add_point(0.0, Color(0.8, 0.3, 0.3, 1.0))  # Red
-		gradient.add_point(1.0, Color(0.3, 0.2, 0.8, 1.0))  # Purple
+		background_texture_path = "res://assets/ui/popup_lose_background.png"
 	
-	var gradient_texture = GradientTexture2D.new()
-	gradient_texture.gradient = gradient
-	gradient_texture.fill_from = Vector2(0.5, 0.0)
-	gradient_texture.fill_to = Vector2(0.5, 1.0)
+	# Check if custom background asset exists
+	if background_texture_path != "" and ResourceLoader.exists(background_texture_path):
+		print("[GM] Using custom popup background: ", background_texture_path)
+		panel.texture = load(background_texture_path)
+		panel.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	else:
+		print("[GM] Using fallback gradient background")
+		# Create gradient background (fallback)
+		var gradient = Gradient.new()
+		if winner_peer == 1:  # Victory
+			gradient.add_point(0.0, Color(0.2, 0.8, 0.8, 1.0))  # Teal
+			gradient.add_point(1.0, Color(0.3, 0.2, 0.8, 1.0))  # Purple
+		else:  # Defeat
+			gradient.add_point(0.0, Color(0.8, 0.3, 0.3, 1.0))  # Red
+			gradient.add_point(1.0, Color(0.3, 0.2, 0.8, 1.0))  # Purple
+		
+		var gradient_texture = GradientTexture2D.new()
+		gradient_texture.gradient = gradient
+		gradient_texture.fill_from = Vector2(0.5, 0.0)
+		gradient_texture.fill_to = Vector2(0.5, 1.0)
+		
+		panel.texture = gradient_texture
+		panel.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	
-	panel.texture = gradient_texture
-	panel.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	end_game_popup.add_child(panel)
 	
 	print("[GM] Created gradient panel at position: ", panel.position, " size: ", panel.size)
 	
-	# Create banner-style result display
-	var banner = ColorRect.new()
-	banner.size = Vector2(280, 80)
-	banner.position = Vector2(35, 80)  # Centered in panel
-	
-	# Banner color based on result
+	# Create banner-style result display with custom assets
+	var banner_texture_path = ""
 	if winner_peer == 1:  # Victory
-		banner.color = Color(0.2, 0.6, 1.0, 0.9)  # Blue banner
-	else:  # Defeat  
-		banner.color = Color(1.0, 0.3, 0.3, 0.9)  # Red banner
+		banner_texture_path = "res://assets/ui/banner_win.png"
+	else:  # Defeat
+		banner_texture_path = "res://assets/ui/banner_lose.png"
 	
-	panel.add_child(banner)
-	
-	# Result text on banner
-	var result_label = Label.new()
-	if winner_peer == 1:
-		result_label.text = "WIN"
+	# Check if custom banner asset exists
+	if banner_texture_path != "" and ResourceLoader.exists(banner_texture_path):
+		print("[GM] Using custom banner: ", banner_texture_path)
+		# Use custom banner image - adjusted size to fit better in background PNG
+		var banner = TextureRect.new()
+		banner.size = Vector2(300, 100)  # Larger banner size
+		banner.position = Vector2(25, 70)  # Better centered in panel
+		banner.texture = load(banner_texture_path)
+		banner.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		panel.add_child(banner)
 	else:
-		result_label.text = "LOSE"
-	
-	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	result_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	result_label.position = Vector2(0, 0)
-	result_label.size = Vector2(280, 80)
-	result_label.add_theme_font_size_override("font_size", 32)
-	result_label.add_theme_color_override("font_color", Color.WHITE)
-	banner.add_child(result_label)
+		print("[GM] Using fallback banner design")
+		# Fallback to colored rectangle banner
+		var banner = ColorRect.new()
+		banner.size = Vector2(280, 80)
+		banner.position = Vector2(35, 80)  # Centered in panel
+		
+		# Banner color based on result
+		if winner_peer == 1:  # Victory
+			banner.color = Color(0.2, 0.6, 1.0, 0.9)  # Blue banner
+		else:  # Defeat  
+			banner.color = Color(1.0, 0.3, 0.3, 0.9)  # Red banner
+		
+		panel.add_child(banner)
+		
+		# Result text on banner
+		var result_label = Label.new()
+		if winner_peer == 1:
+			result_label.text = "WIN"
+		else:
+			result_label.text = "LOSE"
+		
+		result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		result_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		result_label.position = Vector2(0, 0)
+		result_label.size = Vector2(280, 80)
+		result_label.add_theme_font_size_override("font_size", 32)
+		result_label.add_theme_color_override("font_color", Color.WHITE)
+		banner.add_child(result_label)
 	
 	# Removed stars decoration as requested
 	
-	# Stats label below banner
-	var stats_text = _get_round_stats(winner_peer)
+	# Stats label below banner - only show time survived, not victory/defeat message
+	var stats_text = _get_time_stats_only(winner_peer)
 	var stats_label = Label.new()
 	stats_label.text = stats_text
 	stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stats_label.position = Vector2(25, 180)
-	stats_label.size = Vector2(300, 60)
-	stats_label.add_theme_font_size_override("font_size", 16)
+	stats_label.position = Vector2(25, 200)
+	stats_label.size = Vector2(300, 40)
+	stats_label.add_theme_font_size_override("font_size", 14)
 	stats_label.add_theme_color_override("font_color", Color.WHITE)
 	panel.add_child(stats_label)
 	
@@ -877,19 +935,7 @@ func _create_styled_button(parent: Control, text: String, pos: Vector2, size: Ve
 		button.pressed.connect(callback)
 		parent.add_child(button)
 		
-		# Optional text overlay (you can remove this if your assets have text)
-		var label = Label.new()
-		label.text = text
-		label.position = pos
-		label.size = size
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 18)
-		label.add_theme_color_override("font_color", Color.WHITE)
-		label.add_theme_color_override("font_shadow_color", Color.BLACK)
-		label.add_theme_constant_override("shadow_offset_x", 2)
-		label.add_theme_constant_override("shadow_offset_y", 2)
-		parent.add_child(label)
+		# No text overlay - custom PNG assets already have text built-in
 	else:
 		# Fallback to colored rectangles (current system)
 		print("[GM] Using fallback button design for: ", text)
@@ -935,14 +981,33 @@ func _get_round_stats(winner_peer: int) -> String:
 	
 	if current_tagger == -1:  # Survival mode
 		if winner_peer == 1:  # Human won by surviving
-			stats = "🏆 You survived the hunt!\n⏱️ Full " + str(int(round_time)) + " seconds survived!"
+			stats = "Congratulations!\nYou survived the hunt!\n\nTime survived: " + str(int(round_time)) + " seconds"
 		else:  # Human was caught
 			# Calculate how long they survived
 			var current_time = Time.get_unix_time_from_system()
 			var elapsed_time = round_time
 			if round_end_time > 0:
 				elapsed_time = round_time - max(round_end_time - current_time, 0)
-			stats = "💀 Caught by hunters!\n⏱️ Survived: " + str(int(max(elapsed_time, 0))) + " seconds"
+			stats = "Game Over!\nYou were caught by the hunters!\n\nTime survived: " + str(int(max(elapsed_time, 0))) + " seconds"
+	else:
+		stats = "Round completed!"
+	
+	return stats
+
+func _get_time_stats_only(winner_peer: int) -> String:
+	"""Generate only time stats without victory/defeat messages"""
+	var stats = ""
+	
+	if current_tagger == -1:  # Survival mode
+		if winner_peer == 1:  # Human won by surviving
+			stats = "Time survived: " + str(int(round_time)) + " seconds"
+		else:  # Human was caught
+			# Calculate how long they survived
+			var current_time = Time.get_unix_time_from_system()
+			var elapsed_time = round_time
+			if round_end_time > 0:
+				elapsed_time = round_time - max(round_end_time - current_time, 0)
+			stats = "Time survived: " + str(int(max(elapsed_time, 0))) + " seconds"
 	else:
 		stats = "Round completed!"
 	
@@ -959,6 +1024,13 @@ func _on_play_again_pressed():
 func _on_main_menu_pressed():
 	"""Handle main menu button press"""
 	print("[GM] Main Menu button pressed!")
+	
+	# Stop single-player music before returning to main menu
+	if has_node("/root/AudioManager"):
+		var audio_manager = get_node("/root/AudioManager")
+		audio_manager.stop_music()
+		print("[GM] Stopped single-player BGM")
+	
 	_close_end_game_popup()
 	# Return to main menu
 	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
@@ -1096,6 +1168,9 @@ func _show_game_ui():
 	"""Show game UI elements when round starts"""
 	if timer_label:
 		timer_label.visible = true
+		print("[GM] Timer label made visible: ", timer_label.visible, " text: '", timer_label.text, "'")
+	else:
+		print("[GM] ERROR: timer_label is null in _show_game_ui()")
 	if round_message_label:
 		round_message_label.visible = true
 	_update_mode_display()
@@ -1205,6 +1280,18 @@ func show_countdown_message(text: String, number: String, duration: float = 1.0)
 func start_single_player_game():
 	"""Start a single-player game with AI opponents"""
 	print("[GM] Starting single-player game")
+	
+	# Single-player BGM should already be playing from MainMenu
+	# Just ensure it's still playing in case of any issues
+	if has_node("/root/AudioManager"):
+		var audio_manager = get_node("/root/AudioManager")
+		if not audio_manager.is_music_playing():
+			audio_manager.play_single_player_music()
+			print("[GM] BGM wasn't playing, started single-player BGM")
+		else:
+			print("[GM] Single-player BGM already playing from MainMenu")
+	else:
+		print("[GM] AudioManager not found - no BGM will play")
 	
 	# Create human player (peer_id = 1)
 	var human_spawn = _pick_spawn_node()

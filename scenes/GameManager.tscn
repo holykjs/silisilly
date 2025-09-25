@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3 uid="uid://cy3x0o8a701uv"]
+[gd_scene load_steps=7 format=3 uid="uid://cy3x0o8a701uv"]
 
 [ext_resource type="Script" uid="uid://shavto1hxw3q" path="res://scripts/gamemanager.gd" id="1_34tde"]
 [ext_resource type="SpriteFrames" uid="uid://cp3dxf1brxva" path="res://assets/player/skins/skin_01.tres" id="2_qppyr"]
 [ext_resource type="SpriteFrames" uid="uid://b7vq2torbdtjy" path="res://assets/player/skins/skin_02.tres" id="3_rtub8"]
 [ext_resource type="SpriteFrames" uid="uid://x8qq2qaok0kj" path="res://assets/player/skins/skin_03.tres" id="4_jg7te"]
 [ext_resource type="SpriteFrames" uid="uid://cypcvmrfbsxif" path="res://assets/player/skins/skin_04.tres" id="5_mx40s"]
+[ext_resource type="FontFile" uid="uid://c6nlrul7sh5ge" path="res://assets/gui/digital-7.ttf" id="6_jg7te"]
 
 [node name="GameManager" type="Node2D"]
 script = ExtResource("1_34tde")
@@ -31,6 +32,7 @@ position = Vector2(930, 130)
 position = Vector2(125, 113)
 
 [node name="HUD" type="CanvasLayer" parent="."]
+layer = 10
 
 [node name="SiliLabel" type="Label" parent="HUD"]
 offset_left = 1074.0
@@ -52,22 +54,32 @@ vertical_alignment = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -20.0
-offset_right = 20.0
-offset_bottom = 23.0
+offset_left = -100.0
+offset_top = 10.0
+offset_right = 100.0
+offset_bottom = 50.0
 grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_fonts/font = ExtResource("6_jg7te")
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
 
 [node name="GameModeLabel" type="Label" parent="HUD"]
-offset_left = 19.0
-offset_top = 17.0
-offset_right = 59.0
-offset_bottom = 40.0
+offset_left = 15.0
+offset_top = 62.0
+offset_right = 55.0
+offset_bottom = 85.0
 theme_override_font_sizes/font_size = 14
 
 [node name="PlayerCountLabel" type="Label" parent="HUD"]
-offset_left = 1096.0
-offset_top = 12.0
-offset_right = 1136.0
-offset_bottom = 35.0
+anchors_preset = -1
+anchor_right = 0.0546875
+offset_left = 987.0
+offset_top = 14.0
+offset_right = 1027.0
+offset_bottom = 37.0
 theme_override_font_sizes/font_size = 14
 metadata/_edit_use_anchors_ = true

@@ -4,6 +4,7 @@ extends Control
 @onready var start_button := $StartButton
 @onready var player_list := $PlayerList
 @onready var lobby_label := $Label
+@onready var back_button := $BackButton
 # Background music now handled by AudioManager
 # @onready var background_music: AudioStreamPlayer = $BackgroundMusic
 var _ui_timer: Timer
@@ -33,6 +34,9 @@ func _ready():
 
 	# Connect start button
 	start_button.pressed.connect(_on_start_pressed)
+	
+	# Connect back button
+	back_button.pressed.connect(_on_back_pressed)
 	
 	# Connect to NetworkLobby signals for player list updates
 	if not NetworkLobby.player_list_changed.is_connected(_update_player_list):
@@ -164,3 +168,19 @@ func _update_player_list():
 	
 	# Force UI refresh
 	player_list.queue_redraw()
+
+func _on_back_pressed():
+	"""Handle back button press - return to main menu"""
+	# Play button sound
+	if has_node("/root/AudioManager"):
+		AudioManager.play_button_sound()
+	
+	print("[Lobby] Back button pressed - returning to main menu")
+	
+	# Disconnect from network if connected
+	if multiplayer.has_multiplayer_peer():
+		print("[Lobby] Disconnecting from network...")
+		multiplayer.multiplayer_peer = null
+	
+	# Return to main menu
+	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")

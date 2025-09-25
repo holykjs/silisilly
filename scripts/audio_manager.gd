@@ -7,6 +7,7 @@ var background_music_player: AudioStreamPlayer
 var button_sound_player: AudioStreamPlayer
 var current_music_scene: String = ""
 var menu_music: AudioStream
+var single_player_music: AudioStream
 var button_sound: AudioStream
 var music_check_timer: Timer
 
@@ -19,14 +20,19 @@ func _ready():
 	button_sound_player = AudioStreamPlayer.new()
 	add_child(button_sound_player)
 	
-	# Load the menu music and button sound
+	# Load the menu music, single-player music, and button sound
 	menu_music = load("res://audios/intro-scene.mp3")
+	single_player_music = load("res://audios/singplayer-bgm.mp3")
 	button_sound = load("res://audios/button-bgm.mp3")
 	
-	# Ensure the audio stream has loop enabled if it's an AudioStreamMP3
+	# Ensure the audio streams have loop enabled if they're AudioStreamMP3
 	if menu_music is AudioStreamMP3:
 		menu_music.loop = true
-		print("[AudioManager] Enabled loop for MP3 audio stream")
+		print("[AudioManager] Enabled loop for menu MP3 audio stream")
+	
+	if single_player_music is AudioStreamMP3:
+		single_player_music.loop = true
+		print("[AudioManager] Enabled loop for single-player MP3 audio stream")
 	
 	# Configure the background music player
 	background_music_player.volume_db = -10
@@ -64,6 +70,29 @@ func play_menu_music():
 		print("[AudioManager] Started menu music (will loop continuously)")
 	else:
 		print("[AudioManager] Menu music already playing")
+	
+	# Start the monitoring timer to ensure continuous playback
+	if not music_check_timer.is_stopped():
+		music_check_timer.stop()
+	music_check_timer.start()
+
+func play_single_player_music():
+	"""Play looping background music for single-player game mode"""
+	if current_music_scene == "SinglePlayer" and background_music_player.playing:
+		return  # Already playing the right music
+	
+	current_music_scene = "SinglePlayer"
+	
+	# Set the stream if different
+	if background_music_player.stream != single_player_music:
+		background_music_player.stream = single_player_music
+	
+	# Start playing if not already playing
+	if not background_music_player.playing:
+		background_music_player.play()
+		print("[AudioManager] Started single-player music (will loop continuously)")
+	else:
+		print("[AudioManager] Single-player music already playing")
 	
 	# Start the monitoring timer to ensure continuous playback
 	if not music_check_timer.is_stopped():
@@ -147,19 +176,19 @@ func _connect_buttons_recursive(node: Node) -> int:
 
 func _on_music_finished():
 	"""Called when music track finishes - restart it for seamless looping"""
-	if current_music_scene in ["MainMenu", "Lobby"]:
+	if current_music_scene in ["MainMenu", "Lobby", "SinglePlayer"]:
 		print("[AudioManager] Music finished, restarting for continuous loop")
 		background_music_player.play()
 	else:
-		print("[AudioManager] Music finished, not in menu scene - stopping")
+		print("[AudioManager] Music finished, not in menu/game scene - stopping")
 
 func _check_music_status():
 	"""Periodically check if music should be playing and restart if needed"""
-	if current_music_scene in ["MainMenu", "Lobby"]:
+	if current_music_scene in ["MainMenu", "Lobby", "SinglePlayer"]:
 		if not background_music_player.playing:
 			print("[AudioManager] Music stopped unexpectedly, restarting...")
 			background_music_player.play()
 	else:
-		# Not in a menu scene, stop the timer
+		# Not in a menu/game scene, stop the timer
 		if not music_check_timer.is_stopped():
 			music_check_timer.stop()
