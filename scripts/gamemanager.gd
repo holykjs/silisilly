@@ -45,6 +45,8 @@ func _ready() -> void:
 	# Connect multiplayer signals for proper disconnection handling
 	if multiplayer.has_multiplayer_peer():
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+		# Also connect to peer connected for late joiners
+		multiplayer.peer_connected.connect(_on_peer_connected_to_game)
 
 	# ensure Players container exists
 	if not has_node("Players"):
@@ -162,9 +164,17 @@ func _pick_spawn_node() -> Node2D:
 	return chosen
 
 # ---------------- client -> server spawn request (first join) ----------------
-@rpc("any_peer")
+@rpc("any_peer", "reliable")
 func rpc_request_spawn(requesting_peer_id:int) -> void:
 	if not multiplayer.is_server():
+		return
+
+	print("[GM] Spawn request from peer:", requesting_peer_id)
+	
+	# Check if player already exists (prevent duplicate spawning)
+	if players.has(requesting_peer_id):
+		print("[GM] Player", requesting_peer_id, "already exists, sending state update")
+		send_full_state_to_peer(requesting_peer_id)
 		return
 
 	var spawn_node = _pick_spawn_node()
@@ -175,14 +185,20 @@ func rpc_request_spawn(requesting_peer_id:int) -> void:
 	# remember skin index on server
 	players_skin_indices[requesting_peer_id] = skin_idx
 
+	print("[GM] Creating player", requesting_peer_id, "at", spawn_pos)
 	# Broadcast create to everyone (clients will create local instances)
 	rpc("rpc_create_player", requesting_peer_id, spawn_pos, skin_idx)
 
+	# Wait a moment for player creation to complete
+	await get_tree().process_frame
 	# After creating the new player's local instance, send the full game state to that peer
 	send_full_state_to_peer(requesting_peer_id)
+	
+	# Check if we have enough players to start a round
+	_check_auto_start_round()
 
 # ---------------- create player (called on everyone) ----------------
-@rpc("any_peer")
+@rpc("any_peer", "call_local", "reliable")
 func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 	# If player already exists, just update its position and skin
 	if players.has(peer_id):
@@ -225,6 +241,9 @@ func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 		players_order.append(peer_id)
 
 	print("[GM] created player for peer:", peer_id, " skin_idx:", skin_idx)
+	
+	# Update visual state after creation
+	call_deferred("update_player_visual_state", peer_id)
 
 # ---------------- server -> client: send full state to a single peer ----------------
 func send_full_state_to_peer(peer_id:int) -> void:
@@ -301,16 +320,32 @@ func spawn_player(peer_id: int, player_name: String) -> void:
 
 # ---------------- round flow ----------------
 func start_new_round() -> void:
-	if not multiplayer.is_server() and multiplayer.has_multiplayer_peer():
+	# Only server can start rounds in multiplayer
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		print("[GM] Only server can start rounds")
 		return
+		
 	if round_active:
 		print("[GM] start_new_round: round already active, ignoring")
 		return
+		
 	if players_order.is_empty():
 		print("[GM] start_new_round: no players")
 		return
+	
+	# In multiplayer, ensure we have enough human players
+	if multiplayer.has_multiplayer_peer():
+		var human_count = players_order.filter(func(pid): return pid < 1000).size()
+		if human_count < 2:
+			print("[GM] Not enough human players for multiplayer round:", human_count)
+			return
 
 	print("[GM] Starting countdown sequence...")
+	
+	# Ensure all clients are synchronized before starting
+	if multiplayer.has_multiplayer_peer():
+		rpc("rpc_sync_game_state")
+		await get_tree().create_timer(0.5).timeout
 	
 	# Respawn all players first
 	_respawn_all_players()
@@ -895,6 +930,27 @@ func _close_end_game_popup():
 		end_game_popup.queue_free()
 		end_game_popup = null
 
+# Handle new peer connecting to game (late joiner)
+func _on_peer_connected_to_game(peer_id: int):
+	"""Handle when a peer connects to an active game"""
+	print("[GM] Peer connected to active game:", peer_id)
+	# Send full game state to the new peer
+	if multiplayer.is_server():
+		await get_tree().create_timer(0.5).timeout  # Wait for peer to be ready
+		send_full_state_to_peer(peer_id)
+
+func _check_auto_start_round():
+	"""Check if we should auto-start a round when enough players join"""
+	if not multiplayer.is_server():
+		return
+	
+	# Only auto-start if we have at least 2 human players and no round is active
+	var human_count = players_order.filter(func(pid): return pid < 1000).size()
+	if human_count >= 2 and not round_active:
+		print("[GM] Auto-starting round with", human_count, "players")
+		await get_tree().create_timer(2.0).timeout  # Give players time to see each other
+		start_new_round()
+
 func _on_peer_disconnected(peer_id: int):
 	"""Handle player disconnection in multiplayer"""
 	if not multiplayer.has_multiplayer_peer():
@@ -943,18 +999,37 @@ func rpc_sync_game_state():
 	if not multiplayer.is_server():
 		return
 	
-	# Sync tagger state
-	rpc("rpc_set_tagger", current_tagger)
+	print("[GM] Synchronizing game state across network")
 	
-	# Sync timer
-	if round_end_time > 0:
-		rpc("rpc_round_timer_start", round_end_time)
+	# Sync basic game state
+	rpc("rpc_update_round_state", round_active, current_tagger, round_end_time)
 	
 	# Sync all frozen states
 	for pid in frozen_set.keys():
 		rpc("rpc_set_frozen", pid, true)
 	
+	# Sync all player visual states
+	for pid in players.keys():
+		update_player_visual_state(pid)
+	
 	print("[GM] Game state synchronized across network")
+
+# New RPC for comprehensive state sync
+@rpc("any_peer", "reliable")
+func rpc_update_round_state(is_active: bool, tagger_id: int, end_time: float):
+	"""Update round state on clients"""
+	round_active = is_active
+	current_tagger = tagger_id
+	round_end_time = end_time
+	
+	# Update tagger state for all players
+	for pid in players.keys():
+		var p = players.get(pid, null)
+		if p and p.has_method("set_sili"):
+			p.set_sili(pid == tagger_id)
+		update_player_visual_state(pid)
+	
+	print("[GM] Client updated round state: active=", is_active, " tagger=", tagger_id)
 
 func _initialize_ui_elements():
 	"""Initialize UI elements - hide them by default until game starts"""

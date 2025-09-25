@@ -232,8 +232,10 @@ func _physics_process(delta: float) -> void:
 	# AI or Human input
 	if is_ai:
 		dir = _get_ai_input(delta)
-	else:
+	elif is_local:  # Only local players should respond to input
 		dir = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
+	else:
+		dir = 0.0  # Remote players don't respond to local input
 	
 	# Store intended velocity for AI collision resistance
 	var intended_velocity_x = dir * move_speed
@@ -260,7 +262,7 @@ func _physics_process(delta: float) -> void:
 
 	# Handle jumping (human or AI)
 	var should_jump = false
-	if is_local:
+	if is_local and not is_ai:  # Only local human players
 		should_jump = Input.is_action_just_pressed("jump")
 	elif is_ai:
 		should_jump = _should_ai_jump()
@@ -282,7 +284,7 @@ func _physics_process(delta: float) -> void:
 			velocity.x = lerp(actual_velocity_x, intended_velocity_x, 0.6)
 
 	# Handle actions (human or AI)
-	if is_local:
+	if is_local and not is_ai:  # Only local human players
 		if Input.is_action_just_pressed("action_tag"):
 			_attempt_tag()
 		if Input.is_action_just_pressed("action_rescue"):

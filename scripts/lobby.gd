@@ -95,11 +95,14 @@ func _on_start_pressed():
 		if has_node("/root/AudioManager"):
 			AudioManager.stop_music()
 		
+		# Disable start button to prevent double-clicks
+		start_button.disabled = true
+		start_button.text = "Starting Game..."
+		
+		print("[Lobby] Starting game with map:", selected_map)
+		# NetworkLobby.start_game() now handles scene transition
 		NetworkLobby.start_game()
-		if selected_map in map_scenes:
-			get_tree().change_scene_to_file(map_scenes[selected_map])
-		else:
-			print("Error: Selected map not found!")
+		# Note: Scene change is now handled in NetworkLobby for proper sync
 
 func _update_player_list():
 	"""Update the player list UI with connected players"""

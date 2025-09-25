@@ -60,14 +60,36 @@ func get_player_data() -> Dictionary:
 
 func start_game():
 	if multiplayer.is_server():
-		# Broadcast to all: please load this map file
+		print("[NetworkLobby] Server starting game with map:", selected_map)
+		# First, notify all clients to prepare for scene change
+		rpc("rpc_prepare_game_start", selected_map)
+		# Wait a moment for clients to acknowledge
+		await get_tree().create_timer(0.5).timeout
+		# Then broadcast scene change to all clients
 		rpc("rpc_load_map", selected_map)
-		# Server also loads the map locally
+		# Server loads the map last to ensure clients are ready
+		await get_tree().create_timer(0.2).timeout
 		_load_map_local(selected_map)
 
-@rpc("any_peer")
+# New: Prepare clients for game start
+@rpc("any_peer", "call_local", "reliable")
+func rpc_prepare_game_start(map_name:String):
+	print("[NetworkLobby] Preparing for game start with map:", map_name)
+	selected_map = map_name
+	# Clients acknowledge they're ready
+	if not multiplayer.is_server():
+		rpc_id(1, "rpc_client_ready_for_game", multiplayer.get_unique_id())
+
+@rpc("any_peer", "call_local", "reliable")
 func rpc_load_map(map_name:String):
+	print("[NetworkLobby] Loading map:", map_name)
 	_load_map_local(map_name)
+
+# Server receives client ready confirmations
+@rpc("any_peer", "reliable")
+func rpc_client_ready_for_game(client_id: int):
+	if multiplayer.is_server():
+		print("[NetworkLobby] Client", client_id, "ready for game start")
 
 # New: RPC to update lobby map selection for clients
 @rpc("any_peer")
@@ -82,19 +104,32 @@ func _load_map_local(map_name:String):
 		push_error("Map missing: " + path)
 		return
 	
+	print("[NetworkLobby] Changing scene to:", path)
 	get_tree().change_scene_to_file(path)
 	
-	# If we're the server, also spawn our own player
+	# Wait for scene to fully load before spawning
+	await get_tree().process_frame
+	await get_tree().process_frame  # Extra frame for safety
+	
+	# Now handle player spawning with proper timing
 	if multiplayer.is_server():
+		print("[NetworkLobby] Server requesting spawn for self")
+		# Server spawns itself first
 		rpc_request_spawn(multiplayer.get_unique_id())
-		return
+		# Then notify clients they can spawn
+		await get_tree().create_timer(0.5).timeout
+		rpc("rpc_clients_can_spawn")
+	else:
+		print("[NetworkLobby] Client waiting for spawn permission")
+		# Clients wait for permission to spawn
 
-	# once scene loads, clients should request spawn (client side)
-	# We'll handle spawning a bit differently, often in the loaded map scene itself,
-	# or a dedicated GameState manager. For now, keep this here.
+# Server tells clients they can now spawn
+@rpc("any_peer", "reliable")
+func rpc_clients_can_spawn():
 	if not multiplayer.is_server():
-		# Request spawn from the server, passing the client's peer ID
-		rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id()) # RPC to server (peer ID 1)
+		print("[NetworkLobby] Client received spawn permission")
+		await get_tree().create_timer(0.1).timeout  # Small delay
+		rpc_id(1, "rpc_request_spawn", multiplayer.get_unique_id())
 
 
 # --- New Multiplayer Signal Callbacks ---
@@ -128,10 +163,16 @@ func _on_connection_failed():
 
 func _on_connected_to_server():
 	print("Successfully connected to server.")
-	# Client is now connected, request to send its data to the server
-	# The server will handle requesting data from new clients.
-	# We might want to send initial data here if it's not requested by the server.
-	# For now, we'll let the server request it.
+	# Send a ping to verify connection is stable
+	await get_tree().create_timer(0.5).timeout
+	rpc_id(1, "rpc_client_connection_verified", multiplayer.get_unique_id())
+	
+# Client confirms stable connection to server
+@rpc("any_peer", "reliable")
+func rpc_client_connection_verified(client_id: int):
+	if multiplayer.is_server():
+		print("[NetworkLobby] Client", client_id, "connection verified")
+		# Server can now safely send data to this client
 
 # --- New RPCs for Player Data Sync ---
 
