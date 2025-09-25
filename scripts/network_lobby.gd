@@ -63,6 +63,14 @@ func get_player_data() -> Dictionary:
 func start_game():
 	if multiplayer.is_server():
 		print("[NetworkLobby] Server starting game with map:", selected_map)
+		# Validate map exists before starting
+		var test_path = "res://maps/%s" % selected_map
+		if not test_path.ends_with(".tscn"):
+			test_path += ".tscn"
+		if not FileAccess.file_exists(test_path):
+			push_error("Cannot start game - map missing: " + test_path)
+			return
+			
 		# First, notify all clients to prepare for scene change
 		rpc("rpc_prepare_game_start", selected_map)
 		# Wait a moment for clients to acknowledge
@@ -101,10 +109,18 @@ func rpc_update_lobby_map(map_name:String):
 	# You might want to emit a signal here too if your lobby UI needs updating
 
 func _load_map_local(map_name:String):
+	# Ensure .tscn extension is added if not present
 	var path = "res://maps/%s" % map_name
+	if not path.ends_with(".tscn"):
+		path += ".tscn"
+		
+	print("[NetworkLobby] Checking map file:", path)
 	if not FileAccess.file_exists(path):
 		push_error("Map missing: " + path)
+		print("[NetworkLobby] ERROR: Map file does not exist:", path)
 		return
+	
+	print("[NetworkLobby] Map file found, proceeding with scene change")
 	
 	print("[NetworkLobby] Changing scene to:", path)
 	get_tree().change_scene_to_file(path)

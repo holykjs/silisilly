@@ -94,8 +94,15 @@ func _on_map_selected(button: TextureButton):
 	
 	if multiplayer.is_server():
 		selected_map = button.name.replace("Button", "") # e.g. "Map1Button" → "Map1"
-		print("Selected map: ", selected_map)
-		NetworkLobby.set_selected_map(selected_map)
+		print("[Lobby] Selected map:", selected_map)
+		# Validate the map exists
+		if selected_map in map_scenes:
+			NetworkLobby.set_selected_map(selected_map)
+			print("[Lobby] Map selection confirmed:", selected_map)
+		else:
+			print("[Lobby] ERROR: Selected map not found in map_scenes:", selected_map)
+			selected_map = "Map1"  # Fallback to default
+			NetworkLobby.set_selected_map(selected_map)
 
 func _on_start_pressed():
 	# Play button sound
@@ -112,8 +119,17 @@ func _on_start_pressed():
 		start_button.text = "Starting Game..."
 		
 		print("[Lobby] Starting game with map:", selected_map)
-		# NetworkLobby.start_game() now handles scene transition
-		NetworkLobby.start_game()
+		print("[Lobby] NetworkLobby selected_map:", NetworkLobby.get_selected_map())
+		# Verify map exists before starting
+		var test_path = "res://maps/%s.tscn" % selected_map
+		if FileAccess.file_exists(test_path):
+			print("[Lobby] Map file confirmed:", test_path)
+			# NetworkLobby.start_game() now handles scene transition
+			NetworkLobby.start_game()
+		else:
+			print("[Lobby] ERROR: Map file not found:", test_path)
+			start_button.disabled = false
+			start_button.text = "START"
 		# Note: Scene change is now handled in NetworkLobby for proper sync
 
 func _update_player_list():
