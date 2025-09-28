@@ -27,14 +27,25 @@ var ai_personality: Dictionary = {}  # Individual AI personality traits
 var ai_wander_target: Vector2 = Vector2.ZERO  # Random wander destination
 var ai_wander_timer: float = 0.0  # Time spent wandering
 var ai_idle_timer: float = 0.0  # Time spent being idle
-
-# Advanced AI hunting variables
+var ai_stuck_timer: float = 0.0  # Track if AI is stuck
+var ai_last_position: Vector2 = Vector2.ZERO  # For stuck detection
+var ai_prediction_target: Vector2 = Vector2.ZERO  # Predicted target position
+var ai_coordination_offset: Vector2 = Vector2.ZERO  # Offset for coordinated attacks
 var ai_last_seen_position: Vector2 = Vector2.ZERO  # Last known human position
-var ai_prediction_target: Vector2 = Vector2.ZERO   # Predicted human position
-var ai_search_timer: float = 0.0                   # Time spent searching
-var ai_coordination_offset: Vector2 = Vector2.ZERO # Offset for coordinated attacks
-var ai_stuck_timer: float = 0.0                    # Time spent stuck in same position
-var ai_last_position: Vector2 = Vector2.ZERO       # Previous position for stuck detection
+var ai_search_timer: float = 0.0  # Time spent searching
+
+# Enhanced AI variables for natural movement
+var ai_movement_style: String = "direct"  # direct, flanking, ambush, patrol
+var ai_velocity_history: Array = []  # Track target's movement patterns
+var ai_preferred_distance: float = 60.0  # Optimal hunting distance
+var ai_aggression_buildup: float = 0.0  # Increases over time when chasing
+var ai_last_tag_attempt: float = 0.0  # Cooldown for tag attempts
+var ai_feint_timer: float = 0.0  # For feinting movements
+var ai_momentum: Vector2 = Vector2.ZERO  # Smooth movement momentum
+var ai_tactical_state: String = "hunt"  # hunt, surround, intercept, ambush
+var ai_human_behavior_data: Dictionary = {}  # Learn human patterns
+var ai_escape_route_timer: float = 0.0  # Track escape route predictions
+var ai_corner_pressure: float = 0.0  # Apply pressure when human is cornered
 
 @onready var anim_sprite: AnimatedSprite2D = $Sprite
 @onready var tag_area: Area2D = $TagArea
@@ -213,7 +224,12 @@ func set_sili(value: bool) -> void:
 func set_frozen(value: bool) -> void:
 	frozen = value
 	if anim_sprite and is_instance_valid(anim_sprite):
-		anim_sprite.modulate = Color(0.7,0.8,1.0) if frozen else (Color(1,0.7,0.7) if is_sili else Color(1,1,1))
+		if frozen:
+			anim_sprite.modulate = Color(0.7,0.8,1.0)
+		elif is_sili:
+			anim_sprite.modulate = Color(1,0.7,0.7)
+		else:
+			anim_sprite.modulate = Color(1,1,1)
 	if frozen and is_instance_valid(anim_sprite):
 		anim_sprite.stop()
 	if debug:
@@ -294,21 +310,15 @@ func _physics_process(delta: float) -> void:
 	elif is_ai:
 		_handle_ai_actions()
 
-func _play_anim(name: String) -> void:
+func _play_anim(anim_name: String) -> void:
 	if not is_instance_valid(anim_sprite) or not is_instance_valid(anim_sprite.sprite_frames):
-		if debug: printerr("[PLAYER] _play_anim: Cannot play animation '", name, "'. SpriteFrames or anim_sprite not valid.")
+		if debug: printerr("[PLAYER] _play_anim: Cannot play animation '", anim_name, "'. SpriteFrames or anim_sprite not valid.")
 		return
-
-	if anim_sprite.sprite_frames.has_animation(name):
-		if anim_sprite.animation != name or not anim_sprite.is_playing():
-			anim_sprite.play(name)
-	elif debug:
-		printerr("[PLAYER] _play_anim: Animation '", name, "' not found in current SpriteFrames.")
-
-
-# ... (rest of the script unchanged) ...
-
-
+	
+	if anim_sprite.sprite_frames.has_animation(anim_name):
+		anim_sprite.play(anim_name)
+	else:
+		if debug: printerr("[PLAYER] _play_anim: Animation '", anim_name, "' not found in SpriteFrames.")
 # ---------------- TagArea signal handlers ----------------
 func _on_tag_area_body_entered(body: Node) -> void:
 	if body == self:
@@ -385,18 +395,18 @@ func _attempt_rescue() -> void:
 
 
 # ---------------- Water detection ----------------
-func _on_area_entered(area: Area2D) -> void:
-	if area.is_in_group("water"):
+func _on_area_entered(_area: Area2D) -> void:
+	if _area.is_in_group("water"):
 		water_overlap_count += 1
 		is_in_water = water_overlap_count > 0
-		if debug: print("[PLAYER] Entered water:", area.name, " Count:", water_overlap_count, " is_in_water:", is_in_water)
+		if debug: print("[PLAYER] Entered water:", _area.name, " Count:", water_overlap_count, " is_in_water:", is_in_water)
 
 
-func _on_area_exited(area: Area2D) -> void:
-	if area.is_in_group("water"):
+func _on_area_exited(_area: Area2D) -> void:
+	if _area.is_in_group("water"):
 		water_overlap_count = max(water_overlap_count - 1, 0)
 		is_in_water = water_overlap_count > 0
-		if debug: print("[PLAYER] Exited water:", area.name, " Count:", water_overlap_count, " is_in_water:", is_in_water)
+		if debug: print("[PLAYER] Exited water:", _area.name, " Count:", water_overlap_count, " is_in_water:", is_in_water)
 
 # ---------------- AI BEHAVIOR SYSTEM ----------------
 func setup_as_ai():
@@ -465,39 +475,33 @@ func _get_ai_input(delta: float) -> float:
 			return _get_idle_input()
 
 func _get_chasing_input() -> float:
-	"""Advanced AI input when chasing - uses prediction and pathfinding"""
-	# Check for stuck detection
+	"""Advanced AI input when chasing - uses prediction, learning, and tactical movement"""
+	# Update timers and learning data
+	_update_ai_learning()
 	_check_if_stuck()
 	
 	if ai_target and is_instance_valid(ai_target):
-		# Use predicted position for smarter movement
-		var target_pos = ai_prediction_target + ai_coordination_offset
-		
-		# Get next position from pathfinding
-		var next_path_position = nav_agent.get_next_path_position() if nav_agent else target_pos
-		var direction = (next_path_position - global_position).normalized()
 		var distance = global_position.distance_to(ai_target.global_position)
 		
-		# Dynamic speed based on distance and game state
-		var chase_factor = _calculate_chase_speed(distance)
+		# Learn from human behavior patterns
+		_analyze_human_behavior()
 		
-		# Anti-stuck behavior
-		if ai_stuck_timer > 1.0:
-			# Add perpendicular movement to get unstuck
-			var perpendicular = Vector2(-direction.y, direction.x)
-			direction += perpendicular * 0.5
-			direction = direction.normalized()
-			chase_factor *= 1.2  # Move faster when stuck
+		# Determine tactical approach based on movement style and situation
+		var movement_input = _calculate_tactical_movement(distance)
 		
-		# Minimal randomness for precise hunting
-		var randomness = randf_range(-0.02, 0.02)
-		return clamp(direction.x * chase_factor + randomness, -1.0, 1.0)
+		# Apply momentum for smoother, more natural movement
+		movement_input = _apply_movement_momentum(movement_input)
+		
+		# Add personality-based variations
+		movement_input = _apply_personality_movement(movement_input, distance)
+		
+		return clamp(movement_input, -1.0, 1.0)
 	else:
 		# Search behavior - move towards last seen or patrol
 		return _get_search_input()
 
 func _calculate_chase_speed(distance: float) -> float:
-	"""Calculate dynamic chase speed based on distance and urgency"""
+	"""Calculate dynamic chase speed based on distance, urgency, and adaptive difficulty"""
 	var base_speed = 1.0
 	
 	# Distance-based speed
@@ -511,6 +515,9 @@ func _calculate_chase_speed(distance: float) -> float:
 	# Personality-based modifier
 	var aggression = ai_personality.get("aggression", 0.8)
 	base_speed *= (0.8 + aggression * 0.4)  # 0.8 to 1.2 multiplier
+	
+	# Apply dynamic difficulty adjustment
+	base_speed = _get_dynamic_chase_speed(base_speed, distance)
 	
 	return base_speed
 
@@ -654,6 +661,7 @@ func _ai_hunter_behavior(game_manager):
 		ai_last_seen_position = human_player.global_position
 		_predict_human_movement(human_player)
 		_calculate_coordination_offset(game_manager)
+		_update_tactical_state(human_player, game_manager)
 		
 		ai_target = human_player
 		ai_state = "chasing"
@@ -661,16 +669,20 @@ func _ai_hunter_behavior(game_manager):
 		ai_wander_timer = 0.0
 		ai_search_timer = 0.0
 		
-		# Use prediction for smarter pathfinding
-		var target_position = ai_prediction_target + ai_coordination_offset
+		# Use enhanced prediction for smarter pathfinding
+		var target_position = _get_enhanced_prediction() + ai_coordination_offset
 		
 		# Set navigation target for pathfinding
 		if nav_agent:
 			nav_agent.target_position = target_position
 		
 		var distance = global_position.distance_to(human_player.global_position)
+		
+		# Dynamic corner pressure detection
+		_update_corner_pressure(human_player)
+		
 		if debug and ai_decision_timer <= 0: 
-			print("[AI Hunter] ", peer_id, " CHASING human at distance: ", distance, " state: ", ai_state)
+			print("[AI Hunter] ", peer_id, " (", ai_personality.archetype, ") CHASING human at distance: ", distance, " tactical_state: ", ai_tactical_state)
 	else:
 		# Smart searching behavior when human is not visible
 		if debug and ai_decision_timer <= 0:
@@ -683,7 +695,9 @@ func _predict_human_movement(human_player):
 		ai_prediction_target = human_player.global_position
 		return
 	
-	var human_velocity = human_player.velocity if human_player.has_method("get_velocity") else Vector2.ZERO
+	var human_velocity: Vector2 = Vector2.ZERO
+	if human_player.has_method("get_velocity"):
+		human_velocity = human_player.velocity
 	var prediction_time = ai_personality.get("reaction_time", 0.5)
 	
 	# Predict future position based on current velocity
@@ -762,6 +776,351 @@ func _set_aggressive_patrol_target():
 	
 	if nav_agent:
 		nav_agent.target_position = ai_wander_target
+
+# ============ ENHANCED AI MOVEMENT FUNCTIONS ============
+
+func _update_ai_learning():
+	"""Update AI learning timers and data"""
+	ai_aggression_buildup += get_physics_process_delta_time() * 0.1
+	ai_aggression_buildup = min(ai_aggression_buildup, 2.0)  # Cap at 2x aggression
+	
+	ai_last_tag_attempt += get_physics_process_delta_time()
+	ai_feint_timer += get_physics_process_delta_time()
+	ai_escape_route_timer += get_physics_process_delta_time()
+	
+	# Update adaptive difficulty
+	_update_adaptive_difficulty()
+
+func _analyze_human_behavior():
+	"""Analyze and learn from human player movement patterns"""
+	if not ai_target or not is_instance_valid(ai_target):
+		return
+	
+	# Track velocity history for pattern recognition
+	if ai_target.has_method("get_velocity"):
+		var human_velocity = ai_target.velocity
+		ai_velocity_history.append(human_velocity)
+		
+		# Keep only recent history (last 2 seconds at 60fps)
+		if ai_velocity_history.size() > 120:
+			ai_velocity_history.pop_front()
+		
+		# Update behavior data
+		if ai_velocity_history.size() > 10:
+			var avg_velocity = Vector2.ZERO
+			for vel in ai_velocity_history:
+				avg_velocity += vel
+			avg_velocity /= ai_velocity_history.size()
+			
+			ai_human_behavior_data.preferred_directions = avg_velocity.normalized()
+			ai_human_behavior_data.average_speed = avg_velocity.length()
+
+func _calculate_tactical_movement(distance: float) -> float:
+	"""Calculate movement based on AI tactical state and personality"""
+	var base_direction = Vector2.ZERO
+	var target_position = ai_target.global_position
+	
+	# Enhanced prediction with learned behavior
+	var predicted_position = _get_enhanced_prediction()
+	
+	match ai_movement_style:
+		"direct":
+			base_direction = _get_direct_approach(predicted_position)
+		"flanking":
+			base_direction = _get_flanking_approach(predicted_position, distance)
+		"ambush":
+			base_direction = _get_ambush_approach(predicted_position, distance)
+		"patrol":
+			base_direction = _get_coordinated_approach(predicted_position, distance)
+	
+	# Apply tactical state modifications
+	base_direction = _apply_tactical_state(base_direction, distance)
+	
+	return base_direction.x
+
+func _get_enhanced_prediction() -> Vector2:
+	"""Enhanced prediction using velocity history and behavior analysis"""
+	if not ai_target or not is_instance_valid(ai_target):
+		return ai_target.global_position if ai_target else Vector2.ZERO
+	
+	var base_prediction = ai_target.global_position
+	var distance = global_position.distance_to(ai_target.global_position)
+	
+	# Use velocity history for better prediction
+	if ai_velocity_history.size() > 5:
+		var recent_velocity = Vector2.ZERO
+		var samples = min(ai_velocity_history.size(), 30)  # Last 0.5 seconds
+		
+		for i in range(ai_velocity_history.size() - samples, ai_velocity_history.size()):
+			recent_velocity += ai_velocity_history[i]
+		recent_velocity /= samples
+		
+		# Predict based on learned patterns
+		var prediction_time = ai_personality.get("reaction_time", 0.5) * randf_range(0.8, 1.2)
+		base_prediction += recent_velocity * prediction_time
+		
+		# Add escape route prediction
+		if distance < ai_human_behavior_data.panic_threshold:
+			var escape_direction = ai_human_behavior_data.preferred_directions
+			if escape_direction.length() > 0.1:
+				base_prediction += escape_direction * 50.0  # Predict escape
+	
+	return base_prediction
+
+func _get_direct_approach(target_pos: Vector2) -> Vector2:
+	"""Direct aggressive approach - straight line with slight unpredictability"""
+	var direction = (target_pos - global_position).normalized()
+	
+	# Add slight weaving for more natural movement
+	var weave_intensity = 0.1 * ai_personality.get("aggression", 0.8)
+	var weave_offset = sin(Time.get_time_dict_from_system().second * 3.0) * weave_intensity
+	
+	direction.x += weave_offset
+	return direction.normalized()
+
+func _get_flanking_approach(target_pos: Vector2, distance: float) -> Vector2:
+	"""Flanking approach - try to get to the side or behind target"""
+	var direct_direction = (target_pos - global_position).normalized()
+	
+	# Calculate flanking angle based on target's movement
+	var flank_angle = PI * 0.5  # 90 degrees
+	if ai_human_behavior_data.preferred_directions.length() > 0.1:
+		# Flank in the direction opposite to human's preferred escape
+		var escape_dir = ai_human_behavior_data.preferred_directions
+		flank_angle = escape_dir.angle() + PI  # Opposite direction
+	
+	# Adjust approach based on distance
+	if distance > ai_preferred_distance:
+		# Move closer while flanking
+		var flank_direction = Vector2(cos(flank_angle), sin(flank_angle))
+		return (direct_direction * 0.7 + flank_direction * 0.3).normalized()
+	else:
+		# Circle around at optimal distance
+		var perpendicular = Vector2(-direct_direction.y, direct_direction.x)
+		return perpendicular.normalized()
+
+func _get_ambush_approach(target_pos: Vector2, distance: float) -> Vector2:
+	"""Ambush approach - wait and predict, then strike"""
+	# If far away, move to ambush position
+	if distance > ai_preferred_distance * 1.5:
+		# Move to intercept predicted path
+		var predicted_path = ai_human_behavior_data.preferred_directions
+		if predicted_path.length() > 0.1:
+			var intercept_point = target_pos + predicted_path * distance * 0.3
+			return (intercept_point - global_position).normalized()
+		else:
+			return (target_pos - global_position).normalized() * 0.5  # Slow approach
+	else:
+		# Wait and prepare to strike
+		if ai_personality.get("patience", 0.5) > randf():
+			return Vector2.ZERO  # Wait
+		else:
+			# Strike when target is close
+			return (target_pos - global_position).normalized()
+
+func _get_coordinated_approach(target_pos: Vector2, distance: float) -> Vector2:
+	"""Coordinated approach - work with other AI hunters"""
+	var base_direction = (target_pos + ai_coordination_offset - global_position).normalized()
+	
+	# Adjust based on other AI positions
+	var game_manager = get_tree().get_first_node_in_group("game_manager")
+	if game_manager:
+		var other_hunters = []
+		for pid in game_manager.players_order:
+			if pid >= 1000 and pid != peer_id:  # Other AI hunters
+				var other_ai = game_manager.players.get(pid, null)
+				if other_ai and is_instance_valid(other_ai):
+					other_hunters.append(other_ai)
+		
+		# Avoid clustering with other hunters
+		for hunter in other_hunters:
+			var hunter_distance = global_position.distance_to(hunter.global_position)
+			if hunter_distance < 100:  # Too close to another hunter
+				var avoid_direction = (global_position - hunter.global_position).normalized()
+				base_direction += avoid_direction * 0.3
+	
+	return base_direction.normalized()
+
+func _apply_tactical_state(direction: Vector2, distance: float) -> Vector2:
+	"""Apply tactical state modifications to movement"""
+	match ai_tactical_state:
+		"hunt":
+			# Standard hunting behavior
+			return direction
+		"surround":
+			# Move to surround position
+			var surround_angle = ai_coordination_offset.angle()
+			var surround_direction = Vector2(cos(surround_angle), sin(surround_angle))
+			return (direction * 0.6 + surround_direction * 0.4).normalized()
+		"intercept":
+			# Move to intercept escape routes
+			var escape_prediction = ai_human_behavior_data.preferred_directions
+			if escape_prediction.length() > 0.1:
+				var intercept_direction = escape_prediction.rotated(PI * 0.5)  # Perpendicular
+				return (direction * 0.4 + intercept_direction * 0.6).normalized()
+		"ambush":
+			# Slow, patient movement
+			return direction * ai_personality.get("patience", 0.5)
+	
+	return direction
+
+func _apply_movement_momentum(input: float) -> float:
+	"""Apply momentum for smoother, more natural movement"""
+	var target_momentum = Vector2(input, 0)
+	
+	# Smooth momentum transition
+	var momentum_factor = 0.15  # How quickly to change direction
+	ai_momentum = ai_momentum.lerp(target_momentum, momentum_factor)
+	
+	# Add slight random variation for natural movement
+	var natural_variation = randf_range(-0.05, 0.05) * ai_personality.get("confusion_chance", 0.01) * 10
+	
+	return ai_momentum.x + natural_variation
+
+func _apply_personality_movement(input: float, distance: float) -> float:
+	"""Apply personality-based movement modifications"""
+	var modified_input = input
+	
+	# Aggression affects speed and directness
+	var aggression = ai_personality.get("aggression", 0.8) + (ai_aggression_buildup * 0.2)
+	modified_input *= (0.7 + aggression * 0.5)  # 0.7 to 1.2 speed multiplier
+	
+	# Tactical intelligence affects precision
+	var intelligence = ai_personality.get("tactical_intelligence", 0.7)
+	if intelligence > 0.8:
+		# Smart AI uses feinting
+		if ai_feint_timer > randf_range(2.0, 4.0):
+			ai_feint_timer = 0.0
+			modified_input *= -0.3  # Brief feint in opposite direction
+	
+	# Patience affects when to commit to attack
+	if distance < ai_preferred_distance * 0.5:
+		var patience = ai_personality.get("patience", 0.5)
+		if patience > 0.7 and ai_last_tag_attempt < 1.0:
+			modified_input *= 0.5  # Wait for better opportunity
+	
+	return modified_input
+
+func _update_tactical_state(human_player, game_manager):
+	"""Update AI tactical state based on situation"""
+	var distance = global_position.distance_to(human_player.global_position)
+	var other_hunters_count = 0
+	var closest_hunter_distance = 999999.0
+	
+	# Count other hunters and find closest one
+	for pid in game_manager.players_order:
+		if pid >= 1000 and pid != peer_id:  # Other AI hunters
+			var other_ai = game_manager.players.get(pid, null)
+			if other_ai and is_instance_valid(other_ai):
+				other_hunters_count += 1
+				var hunter_distance = global_position.distance_to(other_ai.global_position)
+				closest_hunter_distance = min(closest_hunter_distance, hunter_distance)
+	
+	# Determine tactical state based on situation
+	if other_hunters_count >= 2 and distance < 200:
+		# Multiple hunters close - coordinate to surround
+		ai_tactical_state = "surround"
+	elif ai_corner_pressure > 0.5 and distance < 150:
+		# Human is cornered - apply pressure
+		ai_tactical_state = "intercept"
+	elif ai_personality.archetype == "ambusher" and distance > ai_preferred_distance:
+		# Ambusher waits for opportunity
+		ai_tactical_state = "ambush"
+	elif closest_hunter_distance < 120 and other_hunters_count > 0:
+		# Coordinate with nearby hunters
+		ai_tactical_state = "surround"
+	else:
+		# Standard hunting
+		ai_tactical_state = "hunt"
+
+func _update_corner_pressure(human_player):
+	"""Calculate how cornered the human player is using proper boundary detection"""
+	var human_pos = human_player.global_position
+	var escape_routes = 0
+	var check_distance = 150.0
+	
+	# Check escape routes in 8 directions
+	var directions = [
+		Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
+		Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)
+	]
+	
+	for direction in directions:
+		var check_pos = human_pos + direction * check_distance
+		# Check against map boundaries (standard map size is 1154x595)
+		if check_pos.x > 30 and check_pos.x < 1124 and check_pos.y > 30 and check_pos.y < 565:
+			# Additional check for platform obstacles using raycasting
+			var space_state = get_world_2d().direct_space_state
+			var query = PhysicsRayQueryParameters2D.create(human_pos, check_pos)
+			query.exclude = [self]  # Exclude self from raycast
+			var result = space_state.intersect_ray(query)
+			
+			if result.is_empty():
+				escape_routes += 1  # Clear path found
+		# If outside boundaries, this direction is blocked
+	
+	# Calculate pressure (fewer escape routes = higher pressure)
+	ai_corner_pressure = 1.0 - (escape_routes / 8.0)
+	ai_corner_pressure = max(ai_corner_pressure, 0.0)
+	
+	if debug and ai_decision_timer <= 0:
+		print("[AI] Corner pressure for human: ", ai_corner_pressure, " (", escape_routes, "/8 escape routes)")
+
+func _update_adaptive_difficulty():
+	"""Adjust AI difficulty based on human player performance"""
+	var game_manager = get_tree().get_first_node_in_group("game_manager")
+	if not game_manager:
+		return
+	
+	# Update survival time
+	ai_human_behavior_data.survival_time += get_physics_process_delta_time()
+	
+	# Calculate escape success rate
+	if ai_human_behavior_data.total_encounters > 0:
+		ai_human_behavior_data.escape_success_rate = float(ai_human_behavior_data.successful_escapes) / float(ai_human_behavior_data.total_encounters)
+	
+	# Adjust AI performance based on human success rate
+	var target_success_rate = 0.3  # Aim for 30% human escape rate for balanced gameplay
+	var performance_diff = ai_human_behavior_data.escape_success_rate - target_success_rate
+	
+	# Adjust AI aggression and reaction time
+	if performance_diff > 0.2:  # Human escaping too often - make AI harder
+		ai_personality.aggression = min(ai_personality.aggression * 1.05, 1.0)
+		ai_personality.reaction_time = max(ai_personality.reaction_time * 0.95, 0.1)
+		ai_decision_interval = max(ai_decision_interval * 0.95, 0.2)
+	elif performance_diff < -0.2:  # Human getting caught too often - make AI easier
+		ai_personality.aggression = max(ai_personality.aggression * 0.95, 0.5)
+		ai_personality.reaction_time = min(ai_personality.reaction_time * 1.05, 1.0)
+		ai_decision_interval = min(ai_decision_interval * 1.05, 2.0)
+
+func _track_encounter_outcome(was_successful_escape: bool):
+	"""Track the outcome of an encounter with the human player"""
+	ai_human_behavior_data.total_encounters += 1
+	if was_successful_escape:
+		ai_human_behavior_data.successful_escapes += 1
+	
+	# Update difficulty every 5 encounters
+	if ai_human_behavior_data.total_encounters % 5 == 0:
+		_update_adaptive_difficulty()
+
+func _get_dynamic_chase_speed(base_speed: float, distance: float) -> float:
+	"""Get dynamically adjusted chase speed based on performance"""
+	var adjusted_speed = base_speed
+	
+	# Adjust based on escape success rate
+	var success_rate = ai_human_behavior_data.escape_success_rate
+	if success_rate > 0.4:  # Human escaping too much
+		adjusted_speed *= 1.2
+	elif success_rate < 0.2:  # Human getting caught too much
+		adjusted_speed *= 0.8
+	
+	# Distance-based adjustments
+	if distance < 50:
+		adjusted_speed *= 1.3  # Sprint when very close
+	elif distance > 200:
+		adjusted_speed *= 0.9  # Conserve energy when far
+	
+	return adjusted_speed
 
 func _ai_sili_behavior(game_manager):
 	"""AI behavior when this player is Sili (tagger)"""
@@ -886,21 +1245,90 @@ func _check_ai_animations():
 		if debug: print("[AI] WARNING: No animations for peer_id:", peer_id)
 
 func _generate_ai_personality():
-	"""Generate unique personality traits for this AI"""
-	ai_personality = {
-		"aggression": randf_range(0.7, 1.0),      # Higher aggression for hunters
-		"caution": randf_range(0.2, 0.9),        # How cautious when fleeing
-		"helpfulness": randf_range(0.4, 1.0),    # How likely to rescue others
-		"reaction_time": randf_range(0.3, 0.8),  # Much faster reactions for hunters
-		"confusion_chance": randf_range(0.005, 0.015), # Less confusion for hunters
-		"jump_frequency": randf_range(0.002, 0.008)  # Much less jumping
-	}
+	"""Generate unique personality traits for this AI with specialized hunter profiles"""
+	# Create specialized hunter archetypes for more diverse gameplay
+	var archetype = randi() % 4
+	
+	match archetype:
+		0:  # "Aggressive Pursuer" - Direct, fast, relentless
+			ai_personality = {
+				"aggression": randf_range(0.9, 1.0),
+				"caution": randf_range(0.1, 0.3),
+				"helpfulness": randf_range(0.3, 0.6),
+				"reaction_time": randf_range(0.2, 0.4),
+				"confusion_chance": randf_range(0.001, 0.005),
+				"jump_frequency": randf_range(0.001, 0.003),
+				"archetype": "pursuer",
+				"preferred_distance": randf_range(40.0, 70.0),
+				"patience": randf_range(0.2, 0.4),
+				"tactical_intelligence": randf_range(0.6, 0.8)
+			}
+			ai_movement_style = "direct"
+		1:  # "Tactical Flanker" - Smart positioning, patient
+			ai_personality = {
+				"aggression": randf_range(0.7, 0.9),
+				"caution": randf_range(0.4, 0.7),
+				"helpfulness": randf_range(0.5, 0.8),
+				"reaction_time": randf_range(0.3, 0.6),
+				"confusion_chance": randf_range(0.002, 0.008),
+				"jump_frequency": randf_range(0.002, 0.005),
+				"archetype": "flanker",
+				"preferred_distance": randf_range(80.0, 120.0),
+				"patience": randf_range(0.7, 0.9),
+				"tactical_intelligence": randf_range(0.8, 1.0)
+			}
+			ai_movement_style = "flanking"
+		2:  # "Ambush Predator" - Waits, predicts, strikes
+			ai_personality = {
+				"aggression": randf_range(0.6, 0.8),
+				"caution": randf_range(0.5, 0.8),
+				"helpfulness": randf_range(0.4, 0.7),
+				"reaction_time": randf_range(0.4, 0.7),
+				"confusion_chance": randf_range(0.003, 0.010),
+				"jump_frequency": randf_range(0.001, 0.004),
+				"archetype": "ambusher",
+				"preferred_distance": randf_range(100.0, 150.0),
+				"patience": randf_range(0.8, 1.0),
+				"tactical_intelligence": randf_range(0.9, 1.0)
+			}
+			ai_movement_style = "ambush"
+		3:  # "Coordinated Hunter" - Team player, supports others
+			ai_personality = {
+				"aggression": randf_range(0.8, 0.95),
+				"caution": randf_range(0.3, 0.6),
+				"helpfulness": randf_range(0.7, 1.0),
+				"reaction_time": randf_range(0.25, 0.5),
+				"confusion_chance": randf_range(0.002, 0.006),
+				"jump_frequency": randf_range(0.002, 0.006),
+				"archetype": "coordinator",
+				"preferred_distance": randf_range(60.0, 100.0),
+				"patience": randf_range(0.5, 0.7),
+				"tactical_intelligence": randf_range(0.7, 0.9)
+			}
+			ai_movement_style = "patrol"
+	
+	# Set optimal hunting distance
+	ai_preferred_distance = ai_personality.preferred_distance
 	
 	# Adjust decision interval based on personality (faster for hunters)
-	ai_decision_interval = ai_personality.reaction_time
+	ai_decision_interval = ai_personality.reaction_time * randf_range(0.8, 1.2)
+	
+	# Initialize behavior tracking
+	ai_human_behavior_data = {
+		"escape_patterns": [],
+		"preferred_directions": Vector2.ZERO,
+		"panic_threshold": 100.0,
+		"average_speed": 0.0,
+		"jump_frequency": 0.0,
+		"successful_escapes": 0,
+		"total_encounters": 0,
+		"escape_success_rate": 0.0,
+		"last_tag_time": 0.0,
+		"survival_time": 0.0
+	}
 	
 	if debug:
-		print("[AI] Generated personality for ", peer_id, ": ", ai_personality)
+		print("[AI] Generated ", ai_personality.archetype, " personality for ", peer_id, ": ", ai_personality)
 
 func _handle_ai_actions():
 	"""Enhanced AI tagging and rescuing with smart timing"""
@@ -915,6 +1343,14 @@ func _handle_ai_actions():
 	var distance = global_position.distance_to(ai_target.global_position)
 	
 	if ai_state == "chasing":
+		# Track encounter for adaptive difficulty
+		var was_close_encounter = distance < 100
+		if was_close_encounter and ai_last_tag_attempt > 2.0:  # New encounter
+			# Check if human escaped from previous encounter
+			var human_escaped = distance > 150  # Human got away
+			if ai_human_behavior_data.total_encounters > 0:  # Not first encounter
+				_track_encounter_outcome(human_escaped)
+		
 		# Smart tagging range based on movement and prediction
 		var tag_range = _calculate_tag_range(distance)
 		
@@ -929,6 +1365,7 @@ func _handle_ai_actions():
 				_attempt_tag()
 				# Reset reaction delay after tagging attempt
 				ai_reaction_delay = ai_personality.get("reaction_time", 0.3) * 0.5
+				ai_last_tag_attempt = 0.0  # Reset encounter timer
 	elif ai_state == "rescuing" and distance < 50:
 		# AI player tries to rescue (with helpfulness factor)
 		if randf() < ai_personality.get("helpfulness", 0.7):
@@ -940,7 +1377,9 @@ func _calculate_tag_range(distance: float) -> float:
 	
 	# Increase range when target is moving fast (prediction)
 	if ai_target and ai_target.has_method("get_velocity"):
-		var target_speed = ai_target.velocity.length() if ai_target.velocity else 0
+		var target_speed: float = 0.0
+		if ai_target.velocity:
+			target_speed = ai_target.velocity.length()
 		if target_speed > 100:
 			base_range += 15.0  # Longer range for fast-moving targets
 	
@@ -997,7 +1436,10 @@ func _sync_position_to_network():
 	last_sync_time = current_time
 	
 	# Send position, velocity, and animation state to other clients
-	rpc("_receive_network_update", global_position, velocity, anim_sprite.flip_h if anim_sprite else false)
+	var flip_horizontal: bool = false
+	if anim_sprite:
+		flip_horizontal = anim_sprite.flip_h
+	rpc("_receive_network_update", global_position, velocity, flip_horizontal)
 
 @rpc("any_peer", "call_remote", "unreliable")
 func _receive_network_update(pos: Vector2, vel: Vector2, flip_horizontal: bool):

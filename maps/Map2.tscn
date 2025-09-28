@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://ds0kjcyqnpm1i"]
+[gd_scene load_steps=9 format=3 uid="uid://ds0kjcyqnpm1i"]
 
 [ext_resource type="Texture2D" uid="uid://bphktkgsfcbwj" path="res://assets/background/Map2_BG.png" id="1_hi3xx"]
 [ext_resource type="TileSet" uid="uid://b2eehst0nvoyj" path="res://assets/addons/kenney pixel platformer/tile sets/terrain_tile_set.tres" id="2_b20qy"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" uid="uid://ye8gt3t4sdbh" path="res://scenes/HUD.tscn" id="4_5th6v"]
 [ext_resource type="PackedScene" uid="uid://crt1bqu3w2gl0" path="res://scenes/Player.tscn" id="5_j5hil"]
 [ext_resource type="PackedScene" uid="uid://cy3x0o8a701uv" path="res://scenes/GameManager.tscn" id="6_b20qy"]
+[ext_resource type="PackedScene" uid="uid://bwxm8q3r4n5p2" path="res://scenes/MapBoundaries.tscn" id="7_boundaries"]
 
 [sub_resource type="NavigationPolygon" id="NavigationPolygon_b20qy"]
 vertices = PackedVector2Array(1098.77, 589.82, 1098.37, 600.008, 55.9219, 601.93, 102.938, 571.477, 1029.41, 552.172, 1086.89, 486.156, 1098.58, 483.563, 1098.32, 491.258, 1025.3, 493.289, 937.297, 430.898, 1045.98, 431.953, 173, 484.711, 65, 278.398, 17.8906, 276.469, 19.2891, 268.758, 49, 238.039, 65.4297, 214.773, 64.4922, 195, 101, 195, 18.7891, 96.9297, 17.2109, 20.9688, 1135, 18.0234, 315.68, 94.9297, 1135, 113.961, 867.781, 112.961, 317.328, 146, 869.211, 180.102, 300, 159.898, 300, 146, 173, 423.188, 19.1328, 420.188, 19.9375, 361.328, 65, 318.281, 101, 161.898, 1081.93, 302.883, 1081.12, 365.133, 941.648, 367.133, 1065.93, 290.656, 103.891, 486.719, 49, 216.82, 975.859, 179.039, 1060.77, 264.891)
@@ -68,3 +69,5 @@ collision_mask = 2
 
 [node name="GameManager" parent="." instance=ExtResource("6_b20qy")]
 position = Vector2(37, -34)
+
+[node name="MapBoundaries" parent="." instance=ExtResource("7_boundaries")]

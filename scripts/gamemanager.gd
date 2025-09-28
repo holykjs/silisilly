@@ -251,7 +251,10 @@ func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 		if is_instance_valid(player_instance.anim_sprite):
 			# Fallback if skin_resource is null, apply default Godot skin (e.g. red box)
 			player_instance.anim_sprite.sprite_frames = player_instance.anim_sprite.sprite_frames # Force update or re-initialize
-			player_instance._play_default_animation() # Call the helper on player to ensure animation
+			if player_instance.has_method("_play_default_animation"):
+				player_instance._play_default_animation() # Call the helper on player to ensure animation
+			else:
+				print("[GM] Player instance missing _play_default_animation method")
 
 
 	$Players.add_child(player_instance)

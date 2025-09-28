@@ -99,7 +99,7 @@ func _on_single_player_pressed() -> void:
 		print("[MainMenu] Started single-player BGM")
 	
 	# Randomly select a map for single-player
-	var available_maps = ["Map1", "Map2", "Map3", "Map4"]
+	var available_maps = ["Map1", "Map2", "Map3"]
 	var random_map = available_maps[randi() % available_maps.size()]
 	print("[MainMenu] Loading random map:", random_map)
 	get_tree().change_scene_to_file("res://maps/" + random_map + ".tscn")
