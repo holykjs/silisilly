@@ -16,7 +16,7 @@ var map_scenes = {
 	"Map3": "res://maps/Map3.tscn",
 }
 
-var selected_map : String = "Map1"
+var selected_map : String = ""  # No default selection - host must choose
 
 func _ready():
 	_update_ui()
@@ -66,7 +66,23 @@ func _ready():
 
 func _update_ui():
 	print("[Lobby] _update_ui is_server=", multiplayer.is_server(), " has_peer=", multiplayer.has_multiplayer_peer(), " ip=", NetworkLobby.get_local_ip())
-	start_button.disabled = not multiplayer.is_server()
+	
+	# Start button is only enabled if:
+	# 1. Player is server/host
+	# 2. A map has been selected
+	var is_server = multiplayer.is_server()
+	var map_selected = selected_map != ""
+	start_button.disabled = not (is_server and map_selected)
+	
+	# Update start button text to show requirement
+	if is_server:
+		if map_selected:
+			start_button.text = "START GAME"
+		else:
+			start_button.text = "SELECT A MAP FIRST"
+	else:
+		start_button.text = "WAITING FOR HOST"
+	
 	# only server chooses maps, disable buttons for clients
 	for button in map_selection_container.get_children():
 		if button is TextureButton:
@@ -103,10 +119,14 @@ func _on_map_selected(button: TextureButton):
 		if selected_map in map_scenes:
 			NetworkLobby.set_selected_map(selected_map)
 			print("[Lobby] Map selection confirmed:", selected_map)
+			
+			# Update UI to enable start button and show selection
+			_update_ui()
+			_update_map_selection_visual()
 		else:
 			print("[Lobby] ERROR: Selected map not found in map_scenes:", selected_map)
-			selected_map = "Map1"  # Fallback to default
-			NetworkLobby.set_selected_map(selected_map)
+			selected_map = ""  # Reset to no selection
+			_update_ui()
 
 func _on_start_pressed():
 	# Play button sound
@@ -114,6 +134,12 @@ func _on_start_pressed():
 		AudioManager.play_button_sound()
 	
 	if multiplayer.is_server():
+		# Double-check that a map is selected
+		if selected_map == "":
+			print("[Lobby] ERROR: No map selected!")
+			start_button.text = "SELECT A MAP FIRST"
+			return
+		
 		# Stop menu music before entering game
 		if has_node("/root/AudioManager"):
 			AudioManager.stop_music()
@@ -133,7 +159,9 @@ func _on_start_pressed():
 		else:
 			print("[Lobby] ERROR: Map file not found:", test_path)
 			start_button.disabled = false
-			start_button.text = "START"
+			start_button.text = "SELECT A MAP FIRST"
+			selected_map = ""  # Reset selection
+			_update_ui()
 		# Note: Scene change is now handled in NetworkLobby for proper sync
 
 func _update_player_list():
@@ -184,3 +212,16 @@ func _on_back_pressed():
 	
 	# Return to main menu
 	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+
+func _update_map_selection_visual():
+	"""Update visual feedback for selected map"""
+	for button in map_selection_container.get_children():
+		if button is TextureButton:
+			var map_name = button.name.replace("Button", "")
+			if map_name == selected_map:
+				# Highlight selected map
+				button.modulate = Color(1.2, 1.2, 1.0)  # Slightly yellow tint
+				print("[Lobby] Highlighted selected map:", map_name)
+			else:
+				# Normal appearance for unselected maps
+				button.modulate = Color.WHITE

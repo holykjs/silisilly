@@ -71,15 +71,15 @@ func _ready() -> void:
 	if player_skins.is_empty():
 		printerr("WARNING: No player skins assigned in GameManager. Player skins will not be visible.")
 	
-	# Auto-start single-player mode if SinglePlayerManager is active OR no multiplayer
+	# Auto-start single-player mode ONLY if explicitly requested via SinglePlayerManager
 	var should_start_single_player = false
 	
 	if has_node("/root/SinglePlayerManager") and get_node("/root/SinglePlayerManager").is_single_player:
 		print("[GM] Single-player mode detected via SinglePlayerManager")
 		should_start_single_player = true
-	elif not multiplayer.has_multiplayer_peer():
-		print("[GM] No multiplayer detected - assuming single-player mode")
-		should_start_single_player = true
+	else:
+		print("[GM] Multiplayer mode - waiting for network players to join")
+		should_start_single_player = false
 	
 	if should_start_single_player:
 		print("[GM] Starting single-player game in 2 seconds")
@@ -588,40 +588,53 @@ func _process(delta: float) -> void:
 # ---------------- set tagger ----------------
 @rpc("any_peer")
 func rpc_set_tagger(peer_id:int) -> void:
+	# Determine if we're in single-player survival mode
+	var is_single_player = false
+	if has_node("/root/SinglePlayerManager"):
+		var sp_manager = get_node("/root/SinglePlayerManager")
+		is_single_player = sp_manager.is_single_player
+	
 	for pid in players.keys():
 		var p = players.get(pid, null)
 		if p and p.has_method("set_sili"):
-			# In survival mode (peer_id = -1), all AI are taggers
-			if peer_id == -1:  # Survival mode
-				p.set_sili(pid >= 1000)  # AI players are taggers
+			# In single-player survival mode (peer_id = -1), all AI are hunters
+			if peer_id == -1 and is_single_player:  # Single-player survival mode
+				p.set_sili(pid >= 1000)  # AI players are hunters
 			else:
-				p.set_sili(pid == peer_id)  # Normal mode
+				# Multiplayer mode: only ONE specific player is tagger
+				p.set_sili(pid == peer_id)
 		# Update visual state for all players
 		update_player_visual_state(pid)
 
 	# Show appropriate message based on mode
-	if peer_id == -1:  # Survival mode
+	if peer_id == -1 and is_single_player:  # Single-player survival mode only
 		var hunter_count = 0
 		for pid in players.keys():
 			if pid >= 1000:  # Count AI hunters
 				hunter_count += 1
 		show_round_message("SURVIVAL MODE: " + str(hunter_count) + " hunters are after you!", 3.0)
 	elif peer_id == multiplayer.get_unique_id():
-		show_round_message("You are the TAGGER!", 3.0)
+		show_round_message("You are the TAGGER! Freeze all runners!", 3.0)
 	else:
-		show_round_message("Avoid the TAGGER!", 3.0)
+		show_round_message("Player " + str(peer_id) + " is the TAGGER! Don't get frozen!", 3.0)
 
 # ---------------- tag/rescue ----------------
 @rpc("any_peer", "call_local") # Add call_local to ensure server also runs this on itself if needed
 func rpc_request_tag(acting_peer:int, target_peer:int):
 	if not multiplayer.is_server():
 		return
-	# In survival mode, all AI can tag. In normal mode, only current tagger can tag
+	# Check if we're in single-player survival mode
+	var is_single_player = false
+	if has_node("/root/SinglePlayerManager"):
+		var sp_manager = get_node("/root/SinglePlayerManager")
+		is_single_player = sp_manager.is_single_player
+	
+	# In single-player survival mode, all AI can tag. In multiplayer mode, only current tagger can tag
 	var can_tag = false
-	if current_tagger == -1:  # Survival mode
+	if current_tagger == -1 and is_single_player:  # Single-player survival mode
 		can_tag = _is_ai(acting_peer)  # Only AI hunters can tag
-	else:  # Normal mode
-		can_tag = (acting_peer == current_tagger)
+	else:  # Multiplayer mode
+		can_tag = (acting_peer == current_tagger)  # Only the designated tagger can tag
 	
 	if not can_tag:
 		return
@@ -635,6 +648,17 @@ func rpc_request_tag(acting_peer:int, target_peer:int):
 			return
 
 	if frozen_set.has(target_peer):
+		return
+	
+	# Prevent taggers/hunters from being frozen (they can't be tagged)
+	var target_can_be_frozen = true
+	if current_tagger == -1:  # Survival mode
+		target_can_be_frozen = (target_peer < 1000)  # Only human can be frozen, AI hunters cannot
+	else:  # Normal multiplayer mode
+		target_can_be_frozen = (target_peer != current_tagger)  # Only non-taggers can be frozen
+	
+	if not target_can_be_frozen:
+		print("[GM] Tag blocked - target ", target_peer, " is a tagger/hunter and cannot be frozen!")
 		return
 
 	frozen_set[target_peer] = true
@@ -1583,41 +1607,62 @@ func update_player_visual_state(peer_id: int):
 	var name_label = player_node.get_node("NameLabel")
 	var base_name = "Player_" + str(peer_id)  # Use consistent base name
 	
-	# Reset to base name
-	var display_name = base_name
-	var color = Color.WHITE  # Default human player color
+	# Determine base role and color first
+	var role_name = ""
+	var base_color = Color.WHITE
+	var is_frozen = frozen_set.has(peer_id)
 	
 	# Handle survival mode (current_tagger = -1)
 	if current_tagger == -1:  # Survival mode
 		if peer_id >= 1000:  # AI players are all hunters
-			color = Color.RED
-			display_name = "[HUNTER] " + base_name
+			role_name = "HUNTER"
+			base_color = Color.RED
 		else:  # Human player is the runner
-			color = Color.GREEN
-			display_name = "[RUNNER] " + base_name
+			role_name = "RUNNER" 
+			base_color = Color.GREEN
 	else:
 		# Normal multiplayer mode
 		# Check if this is the tagger (Sili)
 		if peer_id == current_tagger:
-			color = Color.RED
-			display_name = "[SILI] " + base_name
+			role_name = "TAGGER"
+			base_color = Color.RED
 		else:
-			# Regular player
-			color = Color.WHITE
-			display_name = base_name
+			# Regular player (runner)
+			role_name = "RUNNER"
+			base_color = Color.WHITE
 	
-	# Frozen players are cyan (overrides other colors)
-	if frozen_set.has(peer_id):
-		color = Color.CYAN
-		display_name = "[FROZEN] " + base_name
+	# Build display name and determine final color
+	var display_name = ""
+	var final_color = base_color
+	
+	# Check if this player can be frozen (taggers/hunters cannot be frozen)
+	var can_be_frozen = true
+	if current_tagger == -1:  # Survival mode
+		can_be_frozen = (peer_id < 1000)  # Only human can be frozen, AI hunters cannot
+	else:  # Normal multiplayer mode
+		can_be_frozen = (peer_id != current_tagger)  # Only non-taggers can be frozen
+	
+	if is_frozen and can_be_frozen:
+		# Show both frozen status and original role (only for players who can actually be frozen)
+		display_name = "[FROZEN %s] %s" % [role_name, base_name]
+		final_color = Color.CYAN  # Frozen players are cyan
+	else:
+		# Show role normally (tagger/hunter can never be frozen)
+		display_name = "[%s] %s" % [role_name, base_name]
+		final_color = base_color
+		
+		# If somehow a tagger/hunter is marked as frozen, remove them from frozen set
+		if is_frozen and not can_be_frozen:
+			frozen_set.erase(peer_id)
+			print("[GM] WARNING: Removed tagger/hunter ", peer_id, " from frozen set - they cannot be frozen!")
 	
 	# Apply changes
 	name_label.text = display_name
-	name_label.modulate = color
+	name_label.modulate = final_color
 	name_label.visible = true  # Ensure label is visible
 	
 	# Also ensure the player sprite is visible
 	if player_node.has_node("Sprite"):
 		player_node.get_node("Sprite").visible = true
 	
-	print("[GM] Updated visual state for player", peer_id, ":", display_name, "color:", color)
+	print("[GM] Updated visual state for player", peer_id, ":", display_name, "color:", final_color)

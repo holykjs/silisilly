@@ -50,6 +50,16 @@ var current_skin_resource: Resource = null # Renamed for clarity on what it stor
 func _ready() -> void:
 	if debug:
 		print("[PLAYER] ready — peer_id:", peer_id, " is_local:", is_local)
+	
+	# Configure collision layers for tag game
+	# Players should pass through each other, only collide with environment
+	collision_layer = 4  # Players are on layer 4 (separate from other players)
+	collision_mask = 2   # Collide with platforms/environment (layer 2), not other player bodies
+	
+	# Layer setup:
+	# Layer 2: Platforms/environment AND TagArea detection
+	# Layer 4: Player bodies (don't collide with each other)
+	# TagArea will still detect other players for tagging/rescue
 
 	# connect TagArea signals
 	if tag_area:
@@ -237,9 +247,8 @@ func _physics_process(delta: float) -> void:
 	else:
 		dir = 0.0  # Remote players don't respond to local input
 	
-	# Store intended velocity for AI collision resistance
-	var intended_velocity_x = dir * move_speed
-	velocity.x = intended_velocity_x
+	# Set horizontal velocity
+	velocity.x = dir * move_speed
 
 	# Crucial check here
 	if is_instance_valid(anim_sprite) and is_instance_valid(anim_sprite.sprite_frames):
@@ -272,16 +281,9 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 	
-	# AI collision resistance - prevent being pushed around by other players
-	if is_ai and not frozen and abs(intended_velocity_x) > 10:
-		# Check if AI was significantly deflected from intended path
-		var actual_velocity_x = velocity.x
-		var velocity_difference = abs(intended_velocity_x - actual_velocity_x)
-		
-		# If deflected more than 50% of intended velocity, restore some movement
-		if velocity_difference > abs(intended_velocity_x) * 0.5:
-			# Restore 60% of intended movement to maintain AI pursuit
-			velocity.x = lerp(actual_velocity_x, intended_velocity_x, 0.6)
+	# Sync position to other clients if this is the local player or AI (AI runs on server)
+	if multiplayer.has_multiplayer_peer() and (is_local or (is_ai and multiplayer.is_server())):
+		_sync_position_to_network()
 
 	# Handle actions (human or AI)
 	if is_local and not is_ai:  # Only local human players
@@ -350,8 +352,13 @@ func _attempt_tag() -> void:
 		if not p: continue
 		if p == self: continue
 		if p.has_method("is_network_player") and p.peer_id != peer_id:
-			rpc_id(1, "rpc_request_tag", peer_id, p.peer_id)
-			if debug: print("[PLAYER] AI Hunter ", peer_id, " requested tag ->", p.peer_id)
+			# Call GameManager's RPC function instead of trying to call RPC directly from player
+			var gm = get_tree().get_first_node_in_group("game_manager")
+			if gm and gm.has_method("rpc_request_tag"):
+				gm.rpc_id(1, "rpc_request_tag", peer_id, p.peer_id)
+				if debug: print("[PLAYER] AI Hunter ", peer_id, " requested tag ->", p.peer_id)
+			else:
+				if debug: print("[PLAYER] GameManager not found or missing rpc_request_tag method")
 			return
 	if debug:
 		print("[PLAYER] no target found to tag")
@@ -365,8 +372,13 @@ func _attempt_rescue() -> void:
 		if not p: continue
 		if p == self: continue
 		if p.has_method("is_network_player") and p.frozen:
-			rpc_id(1, "rpc_request_rescue", peer_id, p.peer_id)
-			if debug: print("[PLAYER] requested rescue ->", p.peer_id)
+			# Call GameManager's RPC function instead of trying to call RPC directly from player
+			var gm = get_tree().get_first_node_in_group("game_manager")
+			if gm and gm.has_method("rpc_request_rescue"):
+				gm.rpc_id(1, "rpc_request_rescue", peer_id, p.peer_id)
+				if debug: print("[PLAYER] requested rescue ->", p.peer_id)
+			else:
+				if debug: print("[PLAYER] GameManager not found or missing rpc_request_rescue method")
 			return
 	if debug:
 		print("[PLAYER] no frozen target nearby")
@@ -969,3 +981,37 @@ func _calculate_tag_chance(distance: float) -> float:
 		base_chance -= 0.1
 	
 	return clamp(base_chance, 0.1, 1.0)
+
+# ---------------- Network Synchronization ----------------
+var last_sync_time: float = 0.0
+var sync_interval: float = 0.05  # Sync every 50ms (20 FPS)
+
+func _sync_position_to_network():
+	"""Sync position and movement to other clients"""
+	var current_time = Time.get_unix_time_from_system()
+	
+	# Only sync at intervals to avoid network spam
+	if current_time - last_sync_time < sync_interval:
+		return
+	
+	last_sync_time = current_time
+	
+	# Send position, velocity, and animation state to other clients
+	rpc("_receive_network_update", global_position, velocity, anim_sprite.flip_h if anim_sprite else false)
+
+@rpc("any_peer", "call_remote", "unreliable")
+func _receive_network_update(pos: Vector2, vel: Vector2, flip_horizontal: bool):
+	"""Receive position update from network"""
+	if is_local:
+		return  # Don't apply network updates to local player
+	
+	# Smooth interpolation to network position
+	var tween = create_tween()
+	tween.tween_property(self, "global_position", pos, 0.1)
+	
+	# Update velocity for physics consistency
+	velocity = vel
+	
+	# Update sprite direction
+	if anim_sprite:
+		anim_sprite.flip_h = flip_horizontal
