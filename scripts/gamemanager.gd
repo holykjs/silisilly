@@ -240,6 +240,9 @@ func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 		player_instance.is_local = (peer_id == 1)  # Human player in single-player
 	else:
 		player_instance.is_local = (peer_id == multiplayer.get_unique_id())  # Multiplayer mode
+		# Set multiplayer authority for proper network synchronization
+		player_instance.set_multiplayer_authority(peer_id)
+		print("[GM] Set multiplayer authority for player ", peer_id, " to peer ", peer_id)
 
 	var skin_resource = get_skin_resource_by_index(skin_idx)
 	if skin_resource and player_instance.has_method("set_skin"):
@@ -255,6 +258,10 @@ func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 	players[peer_id] = player_instance
 	if not players_order.has(peer_id):
 		players_order.append(peer_id)
+	
+	print("[GM] Player created successfully - peer_id: ", peer_id, " position: ", pos, " is_local: ", player_instance.is_local)
+	print("[GM] Player sprite visible: ", player_instance.anim_sprite.visible if player_instance.anim_sprite else "NO SPRITE")
+	print("[GM] Total players now: ", players.size())
 
 	print("[GM] created player for peer:", peer_id, " skin_idx:", skin_idx, " at position:", pos)
 	print("[GM] Player", peer_id, "is_local:", player_instance.is_local, "multiplayer_authority:", player_instance.get_multiplayer_authority())
@@ -265,6 +272,15 @@ func rpc_create_player(peer_id:int, pos:Vector2, skin_idx:int = -1) -> void:
 		name_label.text = "Player_" + str(peer_id)
 		name_label.visible = true
 		print("[GM] Set name label for player", peer_id, "to:", name_label.text)
+	
+	# Force visual update after creation
+	update_player_visual_state(peer_id)
+	
+	# In multiplayer, ensure all clients can see this player
+	if multiplayer.has_multiplayer_peer():
+		await get_tree().process_frame
+		rpc("rpc_force_player_visibility", peer_id)
+		print("[GM] Sent visibility update for player ", peer_id, " to all clients")
 	
 	# Update visual state after creation
 	call_deferred("update_player_visual_state", peer_id)
@@ -328,19 +344,28 @@ func _respawn_all_players() -> void:
 
 # ---------------- respawn player ----------------
 func respawn_player(peer_id: int, pos: Vector2, skin_idx: int) -> void:
+	# In multiplayer, broadcast respawn to all clients
+	if multiplayer.has_multiplayer_peer():
+		rpc("rpc_respawn_player", peer_id, pos, skin_idx)
+	else:
+		# Single-player mode - handle locally
+		_respawn_player_local(peer_id, pos, skin_idx)
+
+@rpc("any_peer", "call_local", "reliable")
+func rpc_respawn_player(peer_id: int, pos: Vector2, skin_idx: int) -> void:
+	"""Respawn player on all clients"""
+	_respawn_player_local(peer_id, pos, skin_idx)
+
+func _respawn_player_local(peer_id: int, pos: Vector2, skin_idx: int) -> void:
+	"""Handle respawn logic locally"""
 	var player_node = players.get(peer_id, null)
 	if player_node:
-		# Use the respawn function in Player.gd, which now handles skin application internally
-		# We don't need to call set_skin directly here, as player.respawn() will handle it.
-		# However, `respawn` in Player.gd expects to find the skin itself.
-		# Let's directly call `set_skin` on the player, as `respawn` on Player.gd is
-		# also updated to use `current_skin_resource`
 		var skin_resource = get_skin_resource_by_index(skin_idx)
 		if skin_resource and player_node.has_method("set_skin"):
 			player_node.set_skin(skin_resource)
 		
-		player_node.respawn(pos) # Now `player.respawn()` just moves and resets other states.
-								# The skin is handled by the server's rpc_set_player_skin.
+		player_node.respawn(pos)
+		print("[GM] Respawned player ", peer_id, " at position ", pos, " with skin_idx ", skin_idx)
 	else:
 		printerr("ERROR: Player node not found for peer_id:", peer_id, " during respawn.")
 
@@ -407,8 +432,18 @@ func start_new_round() -> void:
 	# Respawn all players first (quick operation)
 	_respawn_all_players()
 	
-	# Then show countdown sequence for both modes
-	await _show_countdown_sequence()
+	# Show countdown sequence for both modes
+	# In multiplayer, ensure all clients see the countdown
+	if not is_single_player and multiplayer.has_multiplayer_peer():
+		rpc("rpc_show_countdown")
+		if multiplayer.is_server():
+			await _show_countdown_sequence()
+		else:
+			# Clients wait for countdown duration
+			await get_tree().create_timer(4.0).timeout
+	else:
+		# Single-player mode
+		await _show_countdown_sequence()
 	
 	# In single-player mode, ALL AI are taggers (survival mode)
 	if is_single_player:
@@ -463,6 +498,10 @@ func start_new_round() -> void:
 	
 	# Show game UI elements now that the round is active
 	_show_game_ui()
+	
+	# Ensure all clients show game UI in multiplayer
+	if not is_single_player and multiplayer.has_multiplayer_peer():
+		rpc("rpc_show_game_ui")
 	
 	# Ensure network synchronization
 	rpc("rpc_sync_game_state")
@@ -532,8 +571,12 @@ func _process(delta: float) -> void:
 				if int(time_left) % 5 == 0:
 					print("[GM] Timer updated: ", timer_text, " visible: ", timer_label.visible)
 			else:
-				timer_label.text = "Time Left: " + formatted_time
+				var timer_text = "Time Left: " + formatted_time
+				timer_label.text = timer_text
 				timer_label.modulate = Color.WHITE  # Normal color
+				# Debug: Print every 5 seconds for multiplayer too
+				if int(time_left) % 5 == 0:
+					print("[GM] Multiplayer timer updated: ", timer_text, " visible: ", timer_label.visible, " round_active: ", round_active)
 	else:
 		if timer_label:
 			timer_label.text = ""
@@ -678,11 +721,19 @@ func _on_round_timer_timeout():
 				print("[GM] Multiplayer mode - calling via RPC")
 				rpc("rpc_round_end", 1)  # Use RPC in multiplayer
 		else:
-			print("[GM] Timer expired in normal mode")
+			print("[GM] Timer expired in normal mode - survivors win!")
+			# In normal freeze tag, if time expires, non-taggers (survivors) win
+			# Award victory to any non-tagger player (use first non-tagger as representative)
+			var survivor_winner = -1
+			for pid in players_order:
+				if pid != current_tagger:
+					survivor_winner = pid
+					break
+			
 			if is_single_player:
-				rpc_round_end(-1)  # Call directly in single-player
+				rpc_round_end(survivor_winner)  # Call directly in single-player
 			else:
-				rpc("rpc_round_end", -1) # Use RPC in multiplayer
+				rpc("rpc_round_end", survivor_winner) # Use RPC in multiplayer
 	else:
 		print("[GM] Timer expired but not server/single-player - ignoring")
 
@@ -697,15 +748,12 @@ func rpc_round_end(winner_peer:int) -> void:
 	elif winner_peer == 1 and current_tagger == -1:  # Human wins survival mode
 		message = "SURVIVAL SUCCESS! You escaped the hunters!"
 	elif winner_peer == -1:
-		if current_tagger == -1:  # This shouldn't happen anymore
-			message = "SURVIVAL SUCCESS! You escaped the hunters!"
-		else:
-			message = "Time's up! Runners win!"
+		message = "DRAW! Time expired with no clear winner!"
 	else:
 		if winner_peer == current_tagger:
-			message = "Tagger Wins!"
+			message = "TAGGER WINS! All runners have been frozen!"
 		else:
-			message = "Runners Win!"
+			message = "RUNNERS WIN! They survived until time ran out!"
 
 	print("[GM] Round ended. " + message)
 	show_round_message(message, 3.0)
@@ -736,21 +784,10 @@ func rpc_round_end(winner_peer:int) -> void:
 	
 	print("[GM] Round end - is_single_player: ", is_single_player, " winner_peer: ", winner_peer)
 	
-	# Show end game popup in single-player mode
-	if is_single_player:
-		print("[GM] Showing popup for single-player mode")
-		await get_tree().create_timer(2.0).timeout  # Brief pause to show message
-		_show_end_game_popup(message, winner_peer)
-	else:
-		print("[GM] Not single-player mode, using auto-restart")
-		# Auto-restart in multiplayer mode
-		if multiplayer.is_server():
-			await get_tree().create_timer(3.0).timeout
-			start_new_round()
-		else:
-			# For clients, hide UI after round ends
-			await get_tree().create_timer(3.0).timeout
-			_hide_game_ui()
+	# Show end game popup for both single-player and multiplayer modes
+	print("[GM] Showing end game popup")
+	await get_tree().create_timer(2.0).timeout  # Brief pause to show message
+	_show_end_game_popup(message, winner_peer)
 
 # ---------------- helpers ----------------
 func _is_ai(peer_id:int) -> bool:
@@ -789,9 +826,27 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 		(screen_size.y - panel.size.y) / 2
 	)
 	
+	# Determine if local player won or lost
+	var local_player_won = false
+	var local_peer_id = multiplayer.get_unique_id()
+	
+	# Check win conditions for different scenarios
+	if winner_peer == -2:  # Survival mode - human caught
+		local_player_won = false
+	elif winner_peer == 1 and current_tagger == -1:  # Survival mode - human wins
+		local_player_won = (local_peer_id == 1)
+	elif winner_peer == current_tagger:  # Tagger won
+		local_player_won = (local_peer_id == current_tagger)
+	elif winner_peer != -1:  # Runners won (any non-tagger)
+		local_player_won = (local_peer_id != current_tagger)
+	else:  # Draw
+		local_player_won = false
+	
+	print("[GM] Local player (", local_peer_id, ") won: ", local_player_won, " winner_peer: ", winner_peer, " current_tagger: ", current_tagger)
+	
 	# Try to load custom background assets first
 	var background_texture_path = ""
-	if winner_peer == 1:  # Victory
+	if local_player_won:  # Victory
 		background_texture_path = "res://assets/ui/popup_win_background.png"
 	else:  # Defeat
 		background_texture_path = "res://assets/ui/popup_lose_background.png"
@@ -805,7 +860,7 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 		print("[GM] Using fallback gradient background")
 		# Create gradient background (fallback)
 		var gradient = Gradient.new()
-		if winner_peer == 1:  # Victory
+		if local_player_won:  # Victory
 			gradient.add_point(0.0, Color(0.2, 0.8, 0.8, 1.0))  # Teal
 			gradient.add_point(1.0, Color(0.3, 0.2, 0.8, 1.0))  # Purple
 		else:  # Defeat
@@ -826,7 +881,7 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 	
 	# Create banner-style result display with custom assets
 	var banner_texture_path = ""
-	if winner_peer == 1:  # Victory
+	if local_player_won:  # Victory
 		banner_texture_path = "res://assets/ui/banner_win.png"
 	else:  # Defeat
 		banner_texture_path = "res://assets/ui/banner_lose.png"
@@ -849,7 +904,7 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 		banner.position = Vector2(35, 80)  # Centered in panel
 		
 		# Banner color based on result
-		if winner_peer == 1:  # Victory
+		if local_player_won:  # Victory
 			banner.color = Color(0.2, 0.6, 1.0, 0.9)  # Blue banner
 		else:  # Defeat  
 			banner.color = Color(1.0, 0.3, 0.3, 0.9)  # Red banner
@@ -858,7 +913,7 @@ func _show_end_game_popup(result_message: String, winner_peer: int):
 		
 		# Result text on banner
 		var result_label = Label.new()
-		if winner_peer == 1:
+		if local_player_won:
 			result_label.text = "WIN"
 		else:
 			result_label.text = "LOSE"
@@ -1021,7 +1076,7 @@ func _get_time_stats_only(winner_peer: int) -> String:
 	"""Generate only time stats without victory/defeat messages"""
 	var stats = ""
 	
-	if current_tagger == -1:  # Survival mode
+	if current_tagger == -1:  # Survival mode (single-player)
 		if winner_peer == 1:  # Human won by surviving
 			stats = "Time survived: " + str(int(round_time)) + " seconds"
 		else:  # Human was caught
@@ -1031,8 +1086,20 @@ func _get_time_stats_only(winner_peer: int) -> String:
 			if round_end_time > 0:
 				elapsed_time = round_time - max(round_end_time - current_time, 0)
 			stats = "Time survived: " + str(int(max(elapsed_time, 0))) + " seconds"
-	else:
-		stats = "Round completed!"
+	else:  # Normal multiplayer freeze tag mode
+		if winner_peer == current_tagger:
+			# Tagger won by freezing everyone before time ran out
+			var current_time = Time.get_unix_time_from_system()
+			var elapsed_time = round_time
+			if round_end_time > 0:
+				elapsed_time = round_time - max(round_end_time - current_time, 0)
+			stats = "All runners frozen in: " + str(int(max(elapsed_time, 0))) + " seconds"
+		elif winner_peer != -1:
+			# Runners won by surviving the full timer
+			stats = "Runners survived: " + str(int(round_time)) + " seconds"
+		else:
+			# Draw or other scenario
+			stats = "Round duration: " + str(int(round_time)) + " seconds"
 	
 	return stats
 
@@ -1040,9 +1107,25 @@ func _on_play_again_pressed():
 	"""Handle play again button press"""
 	print("[GM] Play Again button pressed!")
 	_close_end_game_popup()
-	# Brief delay then start new round
-	await get_tree().create_timer(0.5).timeout
-	start_new_round()
+	
+	# Check if we're in single-player or multiplayer mode
+	var is_single_player = false
+	if has_node("/root/SinglePlayerManager"):
+		var sp_manager = get_node("/root/SinglePlayerManager")
+		is_single_player = sp_manager.is_single_player
+	
+	if is_single_player:
+		# Single-player: start new round directly
+		await get_tree().create_timer(0.5).timeout
+		start_new_round()
+	else:
+		# Multiplayer: only server can start new rounds
+		if multiplayer.is_server():
+			await get_tree().create_timer(0.5).timeout
+			start_new_round()
+		else:
+			# Client: show waiting message
+			show_round_message("Waiting for host to start new round...", 3.0)
 
 func _on_main_menu_pressed():
 	"""Handle main menu button press"""
@@ -1192,9 +1275,35 @@ func rpc_round_timer_start(end_time: float):
 	round_end_time = end_time
 	round_active = true
 
+@rpc("any_peer")
+func rpc_show_countdown():
+	"""Show countdown sequence on all clients"""
+	print("[GM] RPC: Starting countdown sequence on client")
+	_show_countdown_sequence()
+
+@rpc("any_peer")
+func rpc_show_game_ui():
+	"""Show game UI on all clients"""
+	print("[GM] RPC: Showing game UI on client")
+	_show_game_ui()
+
+@rpc("any_peer", "call_local", "reliable")
+func rpc_force_player_visibility(peer_id: int):
+	"""Force player visibility update on all clients"""
+	var player_node = players.get(peer_id, null)
+	if player_node:
+		player_node.visible = true
+		if player_node.anim_sprite:
+			player_node.anim_sprite.visible = true
+			player_node.anim_sprite.show()
+		print("[GM] RPC: Forced visibility for player ", peer_id, " - visible: ", player_node.visible)
+	else:
+		print("[GM] RPC: Could not find player ", peer_id, " for visibility update")
+
 @rpc("any_peer", "call_local", "reliable")
 func rpc_sync_game_state():
-	"""Ensure all clients have consistent game state"""
+	"""Synchronize game state across all clients"""
+	print("[GM] Synchronizing game state across network")
 	if not multiplayer.is_server():
 		return
 	
